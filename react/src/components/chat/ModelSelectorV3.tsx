@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { ChevronDown, Component } from 'lucide-react'
 import {
@@ -70,21 +70,29 @@ const ModelSelectorV3: React.FC<ModelSelectorV3Props> = ({
   // Sort providers to put Jaaz first
   const sortProviders = <T,>(grouped: { [provider: string]: T[] }) => {
     const sortedEntries = Object.entries(grouped).sort(([a], [b]) => {
-      if (a === 'jaaz') return -1
-      if (b === 'jaaz') return 1
+      if (a === 'zenlayer') return -1
+      if (b === 'zenlayer') return 1
+      if (a === 'apipodcode') return -1
+      if (b === 'apipodcode') return 1
+      if (a === 'openai') return -1
+      if (b === 'openai') return 1
       return a.localeCompare(b)
     })
     return Object.fromEntries(sortedEntries)
   }
 
   const groupedLLMs = sortProviders(groupLLMsByProvider(textModels))
-  const groupedTools = groupModelsByProvider(allTools)
 
   // Filter tools by type
   const getToolsByType = (type: 'image' | 'video') => {
     const filteredTools = allTools.filter(tool => tool.type === type)
-    return groupModelsByProvider(filteredTools)
+    return sortProviders(groupModelsByProvider(filteredTools))
   }
+
+  useEffect(() => {
+    const isAuto = allTools.length > 0 && selectedTools.length === allTools.length
+    setAutoMode(isAuto)
+  }, [allTools, selectedTools])
 
   const handleModelToggle = (modelKey: string, checked: boolean) => {
     if (activeTab === 'text') {

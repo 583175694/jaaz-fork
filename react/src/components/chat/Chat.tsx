@@ -3,6 +3,7 @@ import Blur from '@/components/common/Blur'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { eventBus, TEvents } from '@/lib/event'
 import ChatMagicGenerator from './ChatMagicGenerator'
+import ChatCanvasVideoGenerator from './ChatCanvasVideoGenerator'
 import {
   AssistantMessage,
   Message,
@@ -555,19 +556,28 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   }
 
   const onSendMessages = useCallback(
-    (data: Message[], configs: { textModel: Model; toolList: ToolInfo[] }) => {
+    async (
+      data: Message[],
+      configs: { textModel: Model; toolList: ToolInfo[] }
+    ) => {
       setPending('text')
       setMessages(data)
 
-      sendMessages({
-        sessionId: sessionId!,
-        canvasId: canvasId,
-        newMessages: data,
-        textModel: configs.textModel,
-        toolList: configs.toolList,
-        systemPrompt:
-          localStorage.getItem('system_prompt') || DEFAULT_SYSTEM_PROMPT,
-      })
+      try {
+        await sendMessages({
+          sessionId: sessionId!,
+          canvasId: canvasId,
+          newMessages: data,
+          textModel: configs.textModel,
+          toolList: configs.toolList,
+          systemPrompt:
+            localStorage.getItem('system_prompt') || DEFAULT_SYSTEM_PROMPT,
+        })
+      } catch (error) {
+        console.error('Failed to send chat messages:', error)
+        setPending(false)
+        toast.error(String(error))
+      }
 
       if (searchSessionId !== sessionId) {
         window.history.pushState(
@@ -749,6 +759,14 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
           {/* 魔法生成组件 */}
           <ChatMagicGenerator
+            sessionId={sessionId || ''}
+            canvasId={canvasId}
+            messages={messages}
+            setMessages={setMessages}
+            setPending={setPending}
+            scrollToBottom={scrollToBottom}
+          />
+          <ChatCanvasVideoGenerator
             sessionId={sessionId || ''}
             canvasId={canvasId}
             messages={messages}

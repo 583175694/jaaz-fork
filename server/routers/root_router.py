@@ -54,10 +54,14 @@ async def get_models() -> list[ModelInfo]:
     res: List[ModelInfo] = []
 
     # Handle Ollama models separately
-    ollama_url = config.get('ollama', {}).get(
+    ollama_config = config.get('ollama', {})
+    ollama_url = ollama_config.get(
         'url', os.getenv('OLLAMA_HOST', 'http://localhost:11434'))
-    # Add Ollama models if URL is available
-    if ollama_url and ollama_url.strip():
+    ollama_enabled = bool(ollama_config.get('enabled', False))
+    # Only probe Ollama when it is explicitly enabled. Otherwise startup logs
+    # are polluted by repeated localhost connection failures on machines that
+    # do not run Ollama.
+    if ollama_enabled and ollama_url and ollama_url.strip():
         ollama_models = get_ollama_model_list()
         for ollama_model in ollama_models:
             res.append({
@@ -68,7 +72,7 @@ async def get_models() -> list[ModelInfo]:
             })
 
     for provider in config.keys():
-        if provider in ['ollama']:
+        if provider in ['ollama', 'jaaz']:
             continue
 
         provider_config = config[provider]
@@ -102,6 +106,8 @@ async def list_tools() -> list[ToolInfoJson]:
         if tool_info.get('provider') == 'system':
             continue
         provider = tool_info['provider']
+        if provider == 'jaaz':
+            continue
         provider_api_key = config[provider].get('api_key', '').strip()
         if provider != 'comfyui' and not provider_api_key:
             continue

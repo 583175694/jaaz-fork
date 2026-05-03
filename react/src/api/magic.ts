@@ -6,6 +6,12 @@ export const sendMagicGenerate = async (payload: {
   canvasId: string
   newMessages: Message[]
   systemPrompt: string | null
+  width: number
+  height: number
+  relationHint: 'single' | 'multi'
+  selectedImageCount: number
+  selectedImageBase64s: string[]
+  selectedImagePositions: Array<{ fileId: string; x: number; y: number }>
 }) => {
   const response = await fetch(`/api/magic`, {
     method: 'POST',
@@ -17,6 +23,12 @@ export const sendMagicGenerate = async (payload: {
       canvas_id: payload.canvasId,
       session_id: payload.sessionId,
       system_prompt: payload.systemPrompt,
+      width: payload.width,
+      height: payload.height,
+      relation_hint: payload.relationHint,
+      selected_image_count: payload.selectedImageCount,
+      selected_image_base64s: payload.selectedImageBase64s,
+      selected_image_positions: payload.selectedImagePositions,
     }),
   })
   const data = await response.json()

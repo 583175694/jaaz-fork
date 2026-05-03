@@ -14,6 +14,7 @@ const CanvasPopbarWrapper = () => {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
   const [showAddToChat, setShowAddToChat] = useState(false)
   const [showMagicGenerate, setShowMagicGenerate] = useState(false)
+  const [showGenerateVideo, setShowGenerateVideo] = useState(false)
 
   const selectedImagesRef = useRef<TCanvasAddImagesToChatEvent>([])
   const selectedElementsRef = useRef<OrderedExcalidrawElement[]>([])
@@ -24,6 +25,7 @@ const CanvasPopbarWrapper = () => {
       setPos(null)
       setShowAddToChat(false)
       setShowMagicGenerate(false)
+      setShowGenerateVideo(false)
       return
     }
 
@@ -34,6 +36,7 @@ const CanvasPopbarWrapper = () => {
     // 判断是否显示添加到对话按钮：选中图片元素
     const hasSelectedImages = selectedImages.length > 0
     setShowAddToChat(hasSelectedImages)
+    setShowGenerateVideo(hasSelectedImages)
 
     // 判断是否显示魔法生成按钮：选中2个以上元素（包含所有类型）
     const selectedCount = Object.keys(selectedIds).length
@@ -54,9 +57,11 @@ const CanvasPopbarWrapper = () => {
         const id = isBase64 ? file.id : file.dataURL.split('/').at(-1)!
         return {
           fileId: id,
-          base64: isBase64 ? file.dataURL : undefined,
+          base64: file.dataURL,
           width: image.width,
           height: image.height,
+          x: image.x,
+          y: image.y,
         }
       })
 
@@ -114,6 +119,7 @@ const CanvasPopbarWrapper = () => {
             selectedElements={selectedElementsRef.current}
             showAddToChat={showAddToChat}
             showMagicGenerate={showMagicGenerate}
+            showGenerateVideo={showGenerateVideo}
           />
         )}
       </AnimatePresence>

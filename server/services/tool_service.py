@@ -5,6 +5,8 @@ from models.tool_model import ToolInfo
 from tools.comfy_dynamic import build_tool
 from tools.write_plan import write_plan_tool
 from tools.generate_image_by_gpt_image_1_jaaz import generate_image_by_gpt_image_1_jaaz
+from tools.generate_image_by_gpt_image_2_zenlayer import generate_image_by_gpt_image_2_zenlayer
+from tools.generate_image_by_nano_banana import generate_image_by_nano_banana
 from tools.generate_image_by_imagen_4_jaaz import generate_image_by_imagen_4_jaaz
 from tools.generate_image_by_imagen_4_replicate import (
     generate_image_by_imagen_4_replicate,
@@ -36,6 +38,7 @@ from tools.generate_image_by_doubao_seededit_3_volces import (
     edit_image_by_doubao_seededit_3_volces,
 )
 from tools.generate_video_by_seedance_v1_jaaz import generate_video_by_seedance_v1_jaaz
+from tools.generate_video_by_veo3_zenlayer import generate_video_by_veo3_zenlayer
 from tools.generate_video_by_seedance_v1_pro_volces import (
     generate_video_by_seedance_v1_pro_volces,
 )
@@ -55,6 +58,18 @@ from services.config_service import config_service
 from services.db_service import db_service
 
 TOOL_MAPPING: Dict[str, ToolInfo] = {
+    "generate_image_by_gpt_image_2_zenlayer": {
+        "display_name": "GPT Image 2",
+        "type": "image",
+        "provider": "zenlayer",
+        "tool_function": generate_image_by_gpt_image_2_zenlayer,
+    },
+    "generate_image_by_nano_banana": {
+        "display_name": "Nano Banana Pro",
+        "type": "image",
+        "provider": "nanobanana",
+        "tool_function": generate_image_by_nano_banana,
+    },
     "generate_image_by_gpt_image_1_jaaz": {
         "display_name": "GPT Image 1",
         "type": "image",
@@ -120,6 +135,12 @@ TOOL_MAPPING: Dict[str, ToolInfo] = {
         "type": "image",
         "provider": "volces",
         "tool_function": edit_image_by_doubao_seededit_3_volces,
+    },
+    "generate_video_by_veo3_zenlayer": {
+        "display_name": "Google Veo 3.1 Fast",
+        "type": "video",
+        "provider": "apipodvideo",
+        "tool_function": generate_video_by_veo3_zenlayer,
     },
     "generate_video_by_seedance_v1_jaaz": {
         "display_name": "Doubao Seedance v1",

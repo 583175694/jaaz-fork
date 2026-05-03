@@ -10,7 +10,7 @@ import { CanvasProvider } from '@/contexts/canvas'
 import { Session } from '@/types/types'
 import { createFileRoute, useParams, useSearch } from '@tanstack/react-router'
 import { Loader2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 export const Route = createFileRoute('/canvas/$id')({
   component: Canvas,
@@ -28,38 +28,71 @@ function Canvas() {
     sessionId: string
   }
   const searchSessionId = search?.sessionId || ''
-  useEffect(() => {
-    let mounted = true
-
-    const fetchCanvas = async () => {
+  const fetchCanvas = useCallback(
+    async (options?: { silent?: boolean }) => {
+      const silent = !!options?.silent
       try {
-        setIsLoading(true)
+        if (!silent) {
+          setIsLoading(true)
+        }
         setError(null)
         const data = await getCanvas(id)
-        if (mounted) {
-          setCanvas(data)
-          setCanvasName(data.name)
-          setSessionList(data.sessions)
-          // Video elements now handled by native Excalidraw embeddable elements
-        }
+        setCanvas(data)
+        setCanvasName(data.name)
+        setSessionList(data.sessions)
+        console.log('🖼️ Canvas refreshed', {
+          canvasId: id,
+          silent,
+          elementCount: data?.data?.elements?.length ?? 0,
+          fileCount: Object.keys(data?.data?.files || {}).length,
+        })
       } catch (err) {
-        if (mounted) {
-          setError(err instanceof Error ? err : new Error('Failed to fetch canvas data'))
-          console.error('Failed to fetch canvas data:', err)
-        }
+        setError(
+          err instanceof Error ? err : new Error('Failed to fetch canvas data')
+        )
+        console.error('Failed to fetch canvas data:', err)
       } finally {
-        if (mounted) {
+        if (!silent) {
           setIsLoading(false)
         }
       }
-    }
+    },
+    [id]
+  )
 
-    fetchCanvas()
+  useEffect(() => {
+    let mounted = true
+    if (mounted) {
+      fetchCanvas()
+    }
 
     return () => {
       mounted = false
     }
-  }, [id])
+  }, [fetchCanvas])
+
+  useEffect(() => {
+    const handleRefresh = (event: Event) => {
+      const payload = (event as CustomEvent<{ canvasId?: string; reason?: string }>)
+        .detail
+      if (payload?.canvasId && payload.canvasId !== id) {
+        return
+      }
+      console.log('🖼️ Canvas refresh requested', {
+        canvasId: id,
+        reason: payload?.reason || 'unknown',
+      })
+      fetchCanvas({ silent: true })
+    }
+
+    window.addEventListener('jaaz:refresh-canvas', handleRefresh as EventListener)
+    return () => {
+      window.removeEventListener(
+        'jaaz:refresh-canvas',
+        handleRefresh as EventListener
+      )
+    }
+  }, [fetchCanvas, id])
 
   const handleNameSave = async () => {
     await renameCanvas(id, canvasName)

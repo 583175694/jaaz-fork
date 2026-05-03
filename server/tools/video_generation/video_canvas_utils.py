@@ -44,7 +44,9 @@ canvas_lock_manager = CanvasLockManager()
 async def save_video_to_canvas(
     session_id: str,
     canvas_id: str,
-    video_url: str
+    video_url: str,
+    download_headers: Optional[Dict[str, str]] = None,
+    source_file_ids: Optional[List[str]] = None,
 ) -> Tuple[str, Dict[str, Any], Dict[str, Any]]:
     """
     Download video, save to files, create canvas element and return data
@@ -65,7 +67,9 @@ async def save_video_to_canvas(
         # Download and save video
         print(f"🎥 Downloading video from: {video_url}")
         mime_type, width, height, extension = await get_video_info_and_save(
-            video_url, os.path.join(FILES_DIR, f"{video_id}")
+            video_url,
+            os.path.join(FILES_DIR, f"{video_id}"),
+            headers=download_headers,
         )
         filename = f"{video_id}.{extension}"
 
@@ -82,17 +86,8 @@ async def save_video_to_canvas(
             "created": int(time.time() * 1000),
         }
 
-        # Create new video element for canvas
-        new_video_element: Dict[str, Any] = await generate_new_video_element(
-            canvas_id,
-            file_id,
-            {
-                "width": width,
-                "height": height,
-            },
-        )
-
-        # Update canvas data
+        # Load canvas data before generating placement so we can anchor the
+        # generated video near its source reference images when available.
         canvas_data: Optional[Dict[str, Any]] = await db_service.get_canvas_data(canvas_id)
         if canvas_data is None:
             canvas_data = {}
@@ -102,6 +97,18 @@ async def save_video_to_canvas(
             canvas_data["data"]["elements"] = []
         if "files" not in canvas_data["data"]:
             canvas_data["data"]["files"] = {}
+
+        # Create new video element for canvas
+        new_video_element: Dict[str, Any] = await generate_new_video_element(
+            canvas_id,
+            file_id,
+            {
+                "width": width,
+                "height": height,
+            },
+            canvas_data=canvas_data["data"],
+            source_file_ids=source_file_ids,
+        )
 
         canvas_data["data"]["elements"].append(
             new_video_element)  # type: ignore
@@ -159,7 +166,9 @@ async def process_video_result(
     video_url: str,
     session_id: str,
     canvas_id: str,
-    provider_name: str = ""
+    provider_name: str = "",
+    download_headers: Optional[Dict[str, str]] = None,
+    source_file_ids: Optional[List[str]] = None,
 ) -> str:
     """
     Complete video processing pipeline: save, update canvas, notify
@@ -178,7 +187,9 @@ async def process_video_result(
         filename, file_data, new_video_element = await save_video_to_canvas(
             session_id=session_id,
             canvas_id=canvas_id,
-            video_url=video_url
+            video_url=video_url,
+            download_headers=download_headers,
+            source_file_ids=source_file_ids,
         )
 
         # Send completion notification
@@ -205,11 +216,13 @@ def generate_video_file_id() -> str:
 
 
 async def get_video_info_and_save(
-    url: str, file_path_without_extension: str
+    url: str,
+    file_path_without_extension: str,
+    headers: Optional[Dict[str, str]] = None,
 ) -> Tuple[str, int, int, str]:
     # Fetch the video asynchronously
     async with HttpClient.create_aiohttp() as session:
-        async with session.get(url) as response:
+        async with session.get(url, headers=headers) as response:
             video_content = await response.read()
 
     # Save to temporary mp4 file first
@@ -250,6 +263,7 @@ async def generate_new_video_element(
     fileid: str,
     video_data: Dict[str, Any],
     canvas_data: Optional[Dict[str, Any]] = None,
+    source_file_ids: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Generate new video element for canvas"""
     if canvas_data is None:
@@ -258,7 +272,12 @@ async def generate_new_video_element(
             canvas = {"data": {}}
         canvas_data = canvas.get("data", {})
 
-    new_x, new_y = await find_next_best_element_position(canvas_data)
+    new_x, new_y = await _find_video_insert_position(
+        canvas_data,
+        source_file_ids=source_file_ids,
+        new_width=int(video_data.get("width", 0) or 0),
+        new_height=int(video_data.get("height", 0) or 0),
+    )
 
     return {
         "type": "video",
@@ -292,3 +311,75 @@ async def generate_new_video_element(
         "scale": [1, 1],
         "crop": None,
     }
+
+
+def _extract_filename_from_data_url(data_url: str) -> str:
+    normalized = str(data_url or "").strip()
+    if not normalized:
+        return ""
+    return normalized.rstrip("/").split("/")[-1]
+
+
+def _find_source_elements(
+    canvas_data: Dict[str, Any],
+    source_file_ids: Optional[List[str]],
+) -> List[Dict[str, Any]]:
+    if not source_file_ids:
+        return []
+
+    source_id_set = {str(file_id or "").strip() for file_id in source_file_ids if str(file_id or "").strip()}
+    if not source_id_set:
+        return []
+
+    files = canvas_data.get("files", {})
+    elements = canvas_data.get("elements", [])
+    matched: List[Dict[str, Any]] = []
+
+    for element in elements:
+        if element.get("isDeleted"):
+            continue
+        if element.get("type") not in {"image", "embeddable", "video"}:
+            continue
+
+        file_id = str(element.get("fileId", "") or "").strip()
+        if file_id and file_id in source_id_set:
+            matched.append(element)
+            continue
+
+        file_info = files.get(file_id, {}) if isinstance(files, dict) else {}
+        if not isinstance(file_info, dict):
+            continue
+
+        filename = _extract_filename_from_data_url(str(file_info.get("dataURL", "") or ""))
+        if filename and filename in source_id_set:
+            matched.append(element)
+
+    return matched
+
+
+async def _find_video_insert_position(
+    canvas_data: Dict[str, Any],
+    source_file_ids: Optional[List[str]],
+    new_width: int,
+    new_height: int,
+    spacing: int = 40,
+) -> Tuple[int, int]:
+    source_elements = _find_source_elements(canvas_data, source_file_ids)
+    if not source_elements:
+        return await find_next_best_element_position(canvas_data)
+
+    min_x = min(int(element.get("x", 0) or 0) for element in source_elements)
+    max_x = max(
+        int(element.get("x", 0) or 0) + int(element.get("width", 0) or 0)
+        for element in source_elements
+    )
+    max_y = max(
+        int(element.get("y", 0) or 0) + int(element.get("height", 0) or 0)
+        for element in source_elements
+    )
+
+    group_center_x = min_x + ((max_x - min_x) // 2)
+    candidate_x = group_center_x - (new_width // 2 if new_width else 0)
+    candidate_y = max_y + spacing
+
+    return max(0, candidate_x), max(0, candidate_y)

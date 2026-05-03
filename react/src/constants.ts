@@ -7,9 +7,13 @@ export const BASE_API_URL =
 export const PROVIDER_NAME_MAPPING: {
   [key: string]: { name: string; icon: string }
 } = {
-  jaaz: {
-    name: 'Jaaz',
-    icon: 'https://raw.githubusercontent.com/11cafe/jaaz/refs/heads/main/assets/icons/jaaz.png',
+  zenlayer: {
+    name: 'Zenlayer',
+    icon: 'https://docs.console.zenlayer.com/favicon.ico',
+  },
+  apipodcode: {
+    name: 'APIPodCode',
+    icon: 'https://openai.com/favicon.ico',
   },
   anthropic: {
     name: 'Claude',

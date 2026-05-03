@@ -8,6 +8,7 @@ from typing import Any, Optional, Tuple
 from nanoid import generate
 from utils.http_client import HttpClient
 from services.config_service import FILES_DIR
+from services.db_service import db_service
 
 
 def generate_image_id() -> str:
@@ -134,7 +135,36 @@ async def get_image_info_and_save(
 # Notification functions moved to tools/image_generation/image_canvas_utils.py
 
 
-async def process_input_image(input_image: str | None) -> str | None:
+async def _resolve_canvas_file_reference(
+    input_image: str,
+    canvas_id: str | None,
+) -> str | None:
+    """Resolve a canvas file id like `im_xxx` to the stored filename."""
+    if not canvas_id:
+        return None
+
+    try:
+        canvas = await db_service.get_canvas_data(canvas_id)
+        canvas_data = (canvas or {}).get("data", {})
+        files = canvas_data.get("files", {})
+        file_info = files.get(input_image)
+        if not isinstance(file_info, dict):
+            return None
+
+        data_url = str(file_info.get("dataURL", "") or "").strip()
+        if not data_url:
+            return None
+
+        return data_url.rstrip("/").split("/")[-1] or None
+    except Exception as e:
+        print(f"Error resolving canvas file reference {input_image}: {e}")
+        return None
+
+
+async def process_input_image(
+    input_image: str | None,
+    canvas_id: str | None = None,
+) -> str | None:
     """
     Process input image and convert to base64 format
 
@@ -148,13 +178,21 @@ async def process_input_image(input_image: str | None) -> str | None:
         return None
 
     try:
-        full_path = os.path.join(FILES_DIR, input_image)
+        resolved_input_image = input_image
+        full_path = os.path.join(FILES_DIR, resolved_input_image)
+        if not os.path.exists(full_path):
+            resolved_input_image = await _resolve_canvas_file_reference(
+                resolved_input_image,
+                canvas_id,
+            ) or resolved_input_image
+            full_path = os.path.join(FILES_DIR, resolved_input_image)
+
         if not os.path.exists(full_path):
             print(f"Warning: Image file not found: {full_path}")
             return None
 
         image = Image.open(full_path)
-        ext = os.path.splitext(input_image)[1].lower()
+        ext = os.path.splitext(resolved_input_image)[1].lower()
         mime_type_map = {
             '.png': 'image/png',
             '.jpg': 'image/jpeg',

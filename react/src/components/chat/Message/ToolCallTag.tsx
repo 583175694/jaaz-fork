@@ -50,21 +50,43 @@ const ToolCallTag: React.FC<ToolCallTagProps> = ({
   const needsConfirmation = requiresConfirmation
 
   let parsedArgs = null
-  try {
-    parsedArgs = JSON.parse(inputs)
-  } catch (error) {
-    console.error('Error parsing args:', error, 'Raw input:', inputs)
-    // 尝试清理输入字符串，移除可能的额外内容
+  const trimmedInputs = inputs.trim()
+  const looksLikePartialJson =
+    !!trimmedInputs &&
+    ((trimmedInputs.startsWith('{') && !trimmedInputs.endsWith('}')) ||
+      (trimmedInputs.startsWith('[') && !trimmedInputs.endsWith(']')))
+
+  if (looksLikePartialJson) {
+    console.debug('⏳ Tool call args still streaming', {
+      toolName: name,
+      currentLength: trimmedInputs.length,
+    })
+  } else if (trimmedInputs) {
     try {
-      const cleanedInput = inputs.trim()
-      const jsonEndIndex = cleanedInput.lastIndexOf('}')
-      if (jsonEndIndex > 0) {
-        const jsonPart = cleanedInput.substring(0, jsonEndIndex + 1)
-        parsedArgs = JSON.parse(jsonPart)
-        console.log('Successfully parsed cleaned JSON:', jsonPart)
+      parsedArgs = JSON.parse(trimmedInputs)
+    } catch (error) {
+      console.warn('⚠️ Failed to parse complete-looking tool args', {
+        toolName: name,
+        error,
+        rawInputPreview: trimmedInputs.slice(0, 500),
+      })
+      // 尝试清理输入字符串，移除可能的额外内容
+      try {
+        const jsonEndIndex = trimmedInputs.lastIndexOf('}')
+        if (jsonEndIndex > 0) {
+          const jsonPart = trimmedInputs.substring(0, jsonEndIndex + 1)
+          parsedArgs = JSON.parse(jsonPart)
+          console.log('✅ Successfully parsed cleaned tool args', {
+            toolName: name,
+            cleanedLength: jsonPart.length,
+          })
+        }
+      } catch (cleanError) {
+        console.warn('⚠️ Failed to parse tool args after cleaning', {
+          toolName: name,
+          error: cleanError,
+        })
       }
-    } catch (cleanError) {
-      console.error('Failed to parse even after cleaning:', cleanError)
     }
   }
 

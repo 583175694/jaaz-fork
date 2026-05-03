@@ -1,7 +1,6 @@
 import AddProviderDialog from '@/components/settings/AddProviderDialog'
 import ComfyuiSetting from '@/components/settings/ComfyuiSetting'
 import CommonSetting from '@/components/settings/CommonSetting'
-import JaazSetting from '@/components/settings/JaazSetting'
 import { Button } from '@/components/ui/button'
 import useConfigsStore from '@/stores/configs'
 import { LLMConfig } from '@/types/types'
@@ -88,12 +87,7 @@ const SettingProviders = () => {
       {!isLoading &&
         Object.keys(providers).map((key, index) => (
           <div key={key} className="w-full">
-            {key === 'jaaz' ? (
-              <JaazSetting
-                config={providers[key]}
-                onConfigChange={handleConfigChange}
-              />
-            ) : key === 'comfyui' ? (
+            {key === 'comfyui' ? (
               <ComfyuiSetting
                 config={providers[key]}
                 onConfigChange={handleConfigChange}

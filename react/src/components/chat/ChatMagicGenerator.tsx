@@ -1,10 +1,8 @@
 import { sendMagicGenerate } from '@/api/magic'
-import { useConfigs } from '@/contexts/configs'
 import { eventBus, TCanvasMagicGenerateEvent } from '@/lib/event'
 import { Message, PendingType } from '@/types/types'
 import { useCallback, useEffect } from 'react'
 import { DEFAULT_SYSTEM_PROMPT } from '@/constants'
-import { useAuth } from '@/contexts/AuthContext'
 
 type ChatMagicGeneratorProps = {
     sessionId: string
@@ -23,26 +21,16 @@ const ChatMagicGenerator: React.FC<ChatMagicGeneratorProps> = ({
     setPending,
     scrollToBottom
 }) => {
-    const { setShowLoginDialog } = useConfigs()
-    const { authStatus } = useAuth()
-
     const handleMagicGenerate = useCallback(
         async (data: TCanvasMagicGenerateEvent) => {
-            if (!authStatus.is_logged_in) {
-                setShowLoginDialog(true)
-                return
-            }
-
-            // 设置pending状态为text，表示正在处理
             setPending('text')
 
-            // 创建包含图片的消息
             const magicMessage: Message = {
                 role: 'user',
                 content: [
                     {
                         type: 'text',
-                        text: '✨ Magic Magic! Wait about 1~2 minutes please...'
+                        text: '✨ GPT Image 2 Edit: redraw the selected canvas region and keep the overall composition.'
                     },
                     {
                         type: 'image_url',
@@ -53,33 +41,35 @@ const ChatMagicGenerator: React.FC<ChatMagicGeneratorProps> = ({
                 ]
             }
 
-            // 更新消息列表
             const newMessages = [...messages, magicMessage]
             setMessages(newMessages)
             scrollToBottom()
 
-            // 发送到后台
             try {
                 await sendMagicGenerate({
                     sessionId: sessionId,
                     canvasId: canvasId,
                     newMessages: newMessages,
                     systemPrompt: localStorage.getItem('system_prompt') || DEFAULT_SYSTEM_PROMPT,
+                    width: data.width,
+                    height: data.height,
+                    relationHint: data.relationHint,
+                    selectedImageCount: data.selectedImageCount,
+                    selectedImageBase64s: data.selectedImageBase64s,
+                    selectedImagePositions: data.selectedImagePositions,
                 })
 
                 scrollToBottom()
-                console.log('魔法生成消息已发送到后台')
+                console.log('GPT Image 2 Edit message sent')
             } catch (error) {
-                console.error('发送魔法生成消息失败:', error)
-                // 发生错误时重置pending状态
+                console.error('Failed to send GPT Image 2 Edit message:', error)
                 setPending(false)
             }
         },
-        [sessionId, canvasId, messages, setMessages, setPending, scrollToBottom, authStatus.is_logged_in, setShowLoginDialog]
+        [sessionId, canvasId, messages, setMessages, setPending, scrollToBottom]
     )
 
     useEffect(() => {
-        // 监听魔法生成事件
         eventBus.on('Canvas::MagicGenerate', handleMagicGenerate)
 
         return () => {
@@ -87,7 +77,7 @@ const ChatMagicGenerator: React.FC<ChatMagicGeneratorProps> = ({
         }
     }, [handleMagicGenerate])
 
-    return null // 这是一个纯逻辑组件，不渲染UI
+    return null
 }
 
 export default ChatMagicGenerator

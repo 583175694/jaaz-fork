@@ -8,7 +8,7 @@
     "start": "cd react && npx vite build && cd .. && npm run start:electron",
     "dev:react": "cd react && npm run dev",
     "dev:electron": "cross-env NODE_ENV=development npx electron electron/main.js",
-    "dev": "concurrently \"npm run dev:react\" \"npm run dev:electron\"",
+    "dev": "./start-dev.sh",
     "start:frontend": "cd frontend && npm run dev",
     "start:electron": "npx electron electron/main.js",
     "build:electron": "electron-builder",

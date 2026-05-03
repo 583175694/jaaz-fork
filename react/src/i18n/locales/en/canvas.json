@@ -44,7 +44,8 @@
   },
   "popbar": {
     "addToChat": "Add to chat",
-    "magicGenerate": "✨ Magic Generate"
+    "magicGenerate": "✨ GPT Image Redraw",
+    "generateVideo": "🎬 Generate video"
   },
   "myAssets": "My Assets",
   "selectAFolder": "Select a folder",

@@ -3,6 +3,31 @@ import useConfigsStore from '@/stores/configs'
 import { useQuery } from '@tanstack/react-query'
 import { createContext, useContext, useEffect, useRef } from 'react'
 
+const TOOL_SELECTION_MIGRATION_VERSION = 'apipodvideo-default-v1'
+
+const getPreferredDefaultTools = (toolList: ToolInfo[]): ToolInfo[] => {
+  const selected: ToolInfo[] = []
+
+  const preferredImageTool =
+    toolList.find((tool) => tool.id === 'generate_image_by_gpt_image_2_zenlayer') ||
+    toolList.find((tool) => tool.provider === 'zenlayer' && tool.type === 'image') ||
+    toolList.find((tool) => tool.type === 'image')
+
+  const preferredVideoTool =
+    toolList.find((tool) => tool.id === 'generate_video_by_veo3_zenlayer') ||
+    toolList.find((tool) => tool.provider === 'apipodvideo' && tool.type === 'video') ||
+    toolList.find((tool) => tool.type === 'video')
+
+  if (preferredImageTool) {
+    selected.push(preferredImageTool)
+  }
+  if (preferredVideoTool) {
+    selected.push(preferredVideoTool)
+  }
+
+  return selected
+}
+
 export const ConfigsContext = createContext<{
   configsStore: typeof useConfigsStore
   refreshModels: () => void
@@ -13,6 +38,7 @@ export const ConfigsProvider = ({
 }: {
   children: React.ReactNode
 }) => {
+  const DEFAULT_PROVIDER_PRIORITY = ['zenlayer', 'apipodcode', 'openai', 'ollama']
   const configsStore = useConfigsStore()
   const {
     setTextModels,
@@ -44,38 +70,77 @@ export const ConfigsProvider = ({
 
     // 设置选择的文本模型
     const textModel = localStorage.getItem('text_model')
+    const zenlayerDefaultModel = llmModels.find(
+      (m) => m.provider === 'zenlayer' && m.model === 'gpt-5.4'
+    )
+    const shouldMigrateStoredTextModel =
+      textModel === 'apipodcode:gpt-5.4' && !!zenlayerDefaultModel
+
     if (
       textModel &&
+      !shouldMigrateStoredTextModel &&
       llmModels.find((m) => m.provider + ':' + m.model === textModel)
     ) {
       setTextModel(
         llmModels.find((m) => m.provider + ':' + m.model === textModel)
       )
     } else {
-      setTextModel(llmModels.find((m) => m.type === 'text'))
+      const defaultModel =
+        DEFAULT_PROVIDER_PRIORITY.map((provider) =>
+          llmModels.find((m) => m.provider === provider && m.type === 'text')
+        ).find(Boolean) || llmModels.find((m) => m.type === 'text')
+      setTextModel(defaultModel)
+      if (defaultModel) {
+        localStorage.setItem(
+          'text_model',
+          `${defaultModel.provider}:${defaultModel.model}`
+        )
+      }
     }
 
     // 设置选中的工具模型
     const disabledToolsJson = localStorage.getItem('disabled_tool_ids')
+    const toolSelectionMigrationVersion = localStorage.getItem(
+      'tool_selection_migration_version'
+    )
     let currentSelectedTools: ToolInfo[] = []
-    // by default, all tools are selected
-    currentSelectedTools = toolList
+    currentSelectedTools = getPreferredDefaultTools(toolList)
     if (disabledToolsJson) {
       try {
         const disabledToolIds: string[] = JSON.parse(disabledToolsJson)
-        // filter out disabled tools
-        currentSelectedTools = toolList.filter(
-          (t) => !disabledToolIds.includes(t.id)
-        )
+        const shouldMigrateLegacyAllSelected =
+          toolSelectionMigrationVersion !== TOOL_SELECTION_MIGRATION_VERSION &&
+          disabledToolIds.length === 0
+
+        if (!shouldMigrateLegacyAllSelected) {
+          // filter out disabled tools
+          currentSelectedTools = toolList.filter(
+            (t) => !disabledToolIds.includes(t.id)
+          )
+        }
       } catch (error) {
         console.error(error)
       }
     }
 
+    localStorage.setItem(
+      'disabled_tool_ids',
+      JSON.stringify(
+        toolList
+          .filter((tool) => !currentSelectedTools.some((selected) => selected.id === tool.id))
+          .map((tool) => tool.id)
+      )
+    )
+    localStorage.setItem(
+      'tool_selection_migration_version',
+      TOOL_SELECTION_MIGRATION_VERSION
+    )
+
     setSelectedTools(currentSelectedTools)
 
-    // 如果文本模型或工具模型为空，则显示登录对话框
-    if (llmModels.length === 0 || toolList.length === 0) {
+    // 只有完全没有文本模型可用时才提示登录/配置 provider。
+    // 纯文本使用场景不应因为没有图片/视频工具而强制登录 Jaaz。
+    if (llmModels.length === 0) {
       setShowLoginDialog(true)
     }
   }, [

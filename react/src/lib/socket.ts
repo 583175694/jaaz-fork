@@ -23,6 +23,7 @@ export class SocketIOManager {
   connect(serverUrl?: string): Promise<boolean> {
     return new Promise((resolve, reject) => {
       const url = serverUrl || this.config.serverUrl
+      console.log('🔌 Socket.IO connecting to:', url || window.location.origin)
 
       if (this.socket) {
         this.socket.disconnect()
@@ -31,9 +32,11 @@ export class SocketIOManager {
       this.socket = io(url, {
         transports: ['websocket'],
         upgrade: false,
+        timeout: 30000,
         reconnection: true,
         reconnectionAttempts: this.maxReconnectAttempts,
         reconnectionDelay: this.reconnectDelay,
+        reconnectionDelayMax: 5000,
       })
 
       this.socket.on('connect', () => {
@@ -44,7 +47,13 @@ export class SocketIOManager {
       })
 
       this.socket.on('connect_error', (error) => {
-        console.error('❌ Socket.IO connection error:', error)
+        console.error('❌ Socket.IO connection error:', {
+          message: error.message,
+          attempt: this.reconnectAttempts + 1,
+          maxAttempts: this.maxReconnectAttempts,
+          connected: this.connected,
+          socketId: this.socket?.id,
+        })
         this.connected = false
         this.reconnectAttempts++
 
@@ -58,7 +67,11 @@ export class SocketIOManager {
       })
 
       this.socket.on('disconnect', (reason) => {
-        console.log('🔌 Socket.IO disconnected:', reason)
+        console.log('🔌 Socket.IO disconnected:', {
+          reason,
+          reconnectAttempts: this.reconnectAttempts,
+          connected: this.connected,
+        })
         this.connected = false
       })
 
@@ -88,6 +101,11 @@ export class SocketIOManager {
 
   private handleSessionUpdate(data: ISocket.SessionUpdateEvent) {
     const { session_id, type } = data
+    console.log('📨 session_update', {
+      type,
+      session_id,
+      canvas_id: (data as { canvas_id?: string }).canvas_id,
+    })
 
     if (!session_id) {
       console.warn('⚠️ Session update missing session_id:', data)
@@ -133,6 +151,16 @@ export class SocketIOManager {
         break
       case ISocket.SessionEventType.Info:
         eventBus.emit('Socket::Session::Info', data)
+        break
+      case 'video_generation_started':
+        eventBus.emit('Socket::Session::Info', {
+          session_id,
+          type: ISocket.SessionEventType.Info,
+          info:
+            typeof (data as { message?: unknown }).message === 'string'
+              ? (data as { message: string }).message
+              : 'Video generation started',
+        })
         break
       case ISocket.SessionEventType.ToolCallResult:
         eventBus.emit('Socket::Session::ToolCallResult', data)

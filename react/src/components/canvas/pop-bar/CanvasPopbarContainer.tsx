@@ -5,6 +5,7 @@ import { memo } from 'react'
 import { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types'
 import CanvasMagicGenerator from './CanvasMagicGenerator'
 import CanvasPopbar from './CanvasPopbar'
+import CanvasVideoGenerator from './CanvasVideoGenerator'
 
 type CanvasPopbarContainerProps = {
     pos: { x: number; y: number }
@@ -12,6 +13,7 @@ type CanvasPopbarContainerProps = {
     selectedElements: OrderedExcalidrawElement[]
     showAddToChat: boolean
     showMagicGenerate: boolean
+    showGenerateVideo: boolean
 }
 
 const CanvasPopbarContainer = ({
@@ -19,7 +21,8 @@ const CanvasPopbarContainer = ({
     selectedImages,
     selectedElements,
     showAddToChat,
-    showMagicGenerate
+    showMagicGenerate,
+    showGenerateVideo
 }: CanvasPopbarContainerProps) => {
 
     return (
@@ -37,6 +40,9 @@ const CanvasPopbarContainer = ({
             <div className="flex items-center gap-1 bg-primary-foreground/75 backdrop-blur-lg rounded-lg p-1 shadow-[0_5px_10px_rgba(0,0,0,0.08)] border border-primary/10 pointer-events-auto">
                 {showAddToChat && (
                     <CanvasPopbar selectedImages={selectedImages} />
+                )}
+                {showGenerateVideo && (
+                    <CanvasVideoGenerator selectedImages={selectedImages} />
                 )}
                 {showMagicGenerate && (
                     <CanvasMagicGenerator selectedImages={selectedImages} selectedElements={selectedElements} />

@@ -26,6 +26,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   const [socketId, setSocketId] = useState<string>()
   const [connecting, setConnecting] = useState(true)
   const [error, setError] = useState<string>()
+  const hasEverConnectedRef = useRef(false)
 
   // Use useRef to maintain socket manager instance across re-renders
   const socketManagerRef = useRef<SocketIOManager | null>(null)
@@ -38,12 +39,22 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
         setConnecting(true)
         setError(undefined)
 
+        const devSocketUrl = (() => {
+          if (process.env.NODE_ENV !== 'development') {
+            return window.location.origin
+          }
+
+          const hostname =
+            window.location.hostname === 'localhost'
+              ? '127.0.0.1'
+              : window.location.hostname
+          return `${window.location.protocol}//${hostname}:57988`
+        })()
+
         // Create socket manager instance if not exists
         if (!socketManagerRef.current) {
           socketManagerRef.current = new SocketIOManager({
-            serverUrl: process.env.NODE_ENV === 'development'
-              ? 'http://localhost:57988'
-              : window.location.origin,
+            serverUrl: devSocketUrl,
             autoConnect: false
           })
         }
@@ -52,6 +63,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
         await socketManager.connect()
 
         if (mounted) {
+          hasEverConnectedRef.current = true
           setConnected(true)
           setSocketId(socketManager.getSocketId())
           setConnecting(false)
@@ -61,6 +73,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
           if (socket) {
             const handleConnect = () => {
               if (mounted) {
+                hasEverConnectedRef.current = true
                 setConnected(true)
                 setSocketId(socketManager.getSocketId())
                 setConnecting(false)
@@ -72,15 +85,28 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
               if (mounted) {
                 setConnected(false)
                 setSocketId(undefined)
-                setConnecting(false)
+                setConnecting(true)
               }
             }
 
             const handleConnectError = (error: Error) => {
               if (mounted) {
-                setError(error.message || '❌ Socket.IO Connection Error')
                 setConnected(false)
-                setConnecting(false)
+                setConnecting(
+                  !socketManager.isMaxReconnectAttemptsReached()
+                )
+                console.warn('⚠️ SocketProvider observed connect_error', {
+                  message: error.message,
+                  reconnectAttempts: socketManager.getReconnectAttempts(),
+                  maxReconnectAttempts: 5,
+                  hasEverConnected: hasEverConnectedRef.current,
+                })
+                if (
+                  socketManager.isMaxReconnectAttemptsReached() ||
+                  !hasEverConnectedRef.current
+                ) {
+                  setError(error.message || '❌ Socket.IO Connection Error')
+                }
               }
             }
 

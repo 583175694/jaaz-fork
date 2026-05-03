@@ -6,6 +6,8 @@ export type TCanvasAddImagesToChatEvent = {
   base64?: string
   width: number
   height: number
+  x?: number
+  y?: number
 }[]
 
 export type TCanvasMagicGenerateEvent = {
@@ -14,6 +16,20 @@ export type TCanvasMagicGenerateEvent = {
   width: number
   height: number
   timestamp: string
+  selectedImageCount: number
+  selectedElementCount: number
+  selectedImageIds: string[]
+  selectedImageBase64s: string[]
+  selectedImagePositions: Array<{ fileId: string; x: number; y: number }>
+  relationHint: 'single' | 'multi'
+}
+
+export type TCanvasGenerateVideoEvent = {
+  selectedImages: TCanvasAddImagesToChatEvent
+  prompt: string
+  duration: number
+  aspectRatio: string
+  resolution: string
 }
 
 export type TMaterialAddImagesToChatEvent = {
@@ -45,6 +61,7 @@ export type TEvents = {
   // ********** Canvas events - Start **********
   'Canvas::AddImagesToChat': TCanvasAddImagesToChatEvent
   'Canvas::MagicGenerate': TCanvasMagicGenerateEvent
+  'Canvas::GenerateVideo': TCanvasGenerateVideoEvent
   // ********** Canvas events - End **********
 
   // ********** Material events - Start **********

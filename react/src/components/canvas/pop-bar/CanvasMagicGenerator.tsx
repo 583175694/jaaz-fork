@@ -55,6 +55,16 @@ const CanvasMagicGenerator = ({ selectedImages, selectedElements }: CanvasMagicG
             width: canvas.width,
             height: canvas.height,
             timestamp: new Date().toISOString(),
+            selectedImageCount: selectedImages.length,
+            selectedElementCount: selectedElements.length,
+            selectedImageIds: selectedImages.map((item) => item.fileId),
+            selectedImageBase64s: selectedImages.map((item) => item.base64).filter(Boolean) as string[],
+            selectedImagePositions: selectedImages.map((item) => ({
+                fileId: item.fileId,
+                x: item.x || 0,
+                y: item.y || 0,
+            })),
+            relationHint: selectedImages.length >= 2 ? 'multi' : 'single',
         });
 
         // 清除选中状态

@@ -10,10 +10,12 @@ from ..image_providers.image_base_provider import ImageProviderBase
 
 # 导入所有提供商以确保自动注册 (不要删除这些导入)
 from ..image_providers.jaaz_provider import JaazImageProvider
+from ..image_providers.apipod_provider import APIPodImageProvider
 from ..image_providers.openai_provider import OpenAIImageProvider
 from ..image_providers.replicate_provider import ReplicateImageProvider
 from ..image_providers.volces_provider import VolcesProvider
 from ..image_providers.wavespeed_provider import WavespeedProvider
+from ..image_providers.zenlayer_openai_image_provider import ZenlayerOpenAIImageProvider
 
 # from ..image_providers.comfyui_provider import ComfyUIProvider
 from .image_canvas_utils import (
@@ -23,10 +25,12 @@ import time
 
 IMAGE_PROVIDERS: dict[str, ImageProviderBase] = {
     "jaaz": JaazImageProvider(),
+    "nanobanana": APIPodImageProvider(),
     "openai": OpenAIImageProvider(),
     "replicate": ReplicateImageProvider(),
     "volces": VolcesProvider(),
     "wavespeed": WavespeedProvider(),
+    "zenlayer": ZenlayerOpenAIImageProvider(),
 }
 
 

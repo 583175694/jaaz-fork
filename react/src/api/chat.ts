@@ -29,6 +29,9 @@ export const sendMessages = async (payload: {
       system_prompt: payload.systemPrompt,
     }),
   })
+  if (!response.ok) {
+    throw new Error(`Chat request failed: ${response.status}`)
+  }
   const data = await response.json()
   return data as Message[]
 }

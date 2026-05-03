@@ -39,6 +39,115 @@ type CanvasExcaliProps = {
   initialData?: ExcalidrawInitialDataState
 }
 
+const isVideoLink = (link?: string | null) => {
+  if (!link) return false
+  return (
+    link.includes('.mp4') ||
+    link.includes('.webm') ||
+    link.includes('.ogg') ||
+    link.startsWith('blob:') ||
+    link.includes('video')
+  )
+}
+
+const normalizeCanvasInitialData = (
+  initialData?: ExcalidrawInitialDataState
+): ExcalidrawInitialDataState | undefined => {
+  if (!initialData || !Array.isArray(initialData.elements)) {
+    return initialData
+  }
+
+  const files = (initialData.files || {}) as Record<string, BinaryFileData>
+  const normalizedElements = initialData.elements.map((element) => {
+    if (element.type !== 'video') {
+      return element
+    }
+
+    const fileId = (element as { fileId?: string }).fileId
+    const file = fileId ? files[fileId] : undefined
+    const link = file?.dataURL
+    if (!link) {
+      return element
+    }
+
+    return {
+      ...element,
+      type: 'embeddable' as const,
+      link,
+      customData: {
+        migratedFromVideo: true,
+      },
+    }
+  })
+
+  return {
+    ...initialData,
+    elements: normalizedElements,
+  }
+}
+
+const stripCollaboratorsFromAppState = (
+  appState?: AppState | ExcalidrawInitialDataState['appState']
+) => {
+  if (!appState) {
+    return appState
+  }
+
+  const { collaborators: _collaborators, ...safeAppState } = appState as AppState & {
+    collaborators?: unknown
+  }
+  return safeAppState
+}
+
+const buildSceneSyncSignature = (
+  data?: ExcalidrawInitialDataState
+): string => {
+  if (!data) {
+    return 'empty'
+  }
+
+  return JSON.stringify({
+    elementIds: (data.elements || []).map((element) => ({
+      id: element.id,
+      type: element.type,
+      updated: element.updated,
+      version: element.version,
+    })),
+    fileIds: Object.keys(data.files || {}).sort(),
+  })
+}
+
+const extractPersistedVideoState = (
+  initialData?: ExcalidrawInitialDataState
+) => {
+  const normalizedData = normalizeCanvasInitialData(initialData)
+  const normalizedFiles =
+    (normalizedData?.files as Record<string, BinaryFileData> | undefined) || {}
+  const persistedVideoElements: Record<string, any> = {}
+  const persistedVideoFiles: Record<string, BinaryFileData> = {}
+
+  for (const element of initialData?.elements || []) {
+    if (element.type !== 'video') {
+      continue
+    }
+
+    const fileId = (element as { fileId?: string }).fileId
+    if (!fileId) {
+      continue
+    }
+
+    persistedVideoElements[element.id] = element
+    if (normalizedFiles[fileId]) {
+      persistedVideoFiles[fileId] = normalizedFiles[fileId]
+    }
+  }
+
+  return {
+    elements: persistedVideoElements,
+    files: persistedVideoFiles,
+  }
+}
+
 const CanvasExcali: React.FC<CanvasExcaliProps> = ({
   canvasId,
   initialData,
@@ -84,13 +193,76 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
         return
       }
 
+      const serializedVideoElements: Record<string, any> = {
+        ...persistedVideoElementsRef.current,
+      }
+      const nonVideoElements = elements.filter((element) => {
+        if (element.type !== 'embeddable') {
+          return true
+        }
+
+        const embeddable = element as ExcalidrawEmbeddableElement
+        if (!isVideoLink(embeddable.link)) {
+          return true
+        }
+
+        const matchedFileEntry = Object.entries(files).find(([, file]) => {
+          const dataUrl = String(file?.dataURL || '')
+          return dataUrl === embeddable.link || embeddable.link?.includes(dataUrl)
+        })
+        const matchedFileId = matchedFileEntry?.[0]
+        if (!matchedFileId) {
+          return false
+        }
+
+        serializedVideoElements[embeddable.id] = {
+          type: 'video',
+          id: embeddable.id,
+          x: embeddable.x,
+          y: embeddable.y,
+          width: embeddable.width,
+          height: embeddable.height,
+          angle: embeddable.angle,
+          fileId: matchedFileId,
+          strokeColor: embeddable.strokeColor,
+          fillStyle: embeddable.fillStyle,
+          strokeStyle: embeddable.strokeStyle,
+          boundElements: embeddable.boundElements,
+          roundness: embeddable.roundness,
+          frameId: embeddable.frameId,
+          backgroundColor: embeddable.backgroundColor,
+          strokeWidth: embeddable.strokeWidth,
+          roughness: embeddable.roughness,
+          opacity: embeddable.opacity,
+          groupIds: embeddable.groupIds,
+          seed: embeddable.seed,
+          version: embeddable.version,
+          versionNonce: embeddable.versionNonce,
+          isDeleted: embeddable.isDeleted,
+          index: embeddable.index,
+          updated: embeddable.updated,
+          link: null,
+          locked: embeddable.locked,
+          status: 'saved',
+          scale: [1, 1],
+          crop: null,
+        }
+        return false
+      })
+
+      persistedVideoElementsRef.current = serializedVideoElements
+      const mergedFiles = {
+        ...files,
+        ...persistedVideoFilesRef.current,
+      }
+
       const data: CanvasData = {
-        elements,
-        appState: {
-          ...appState,
-          collaborators: undefined!,
-        },
-        files,
+        elements: [
+          ...nonVideoElements,
+          ...Object.values(serializedVideoElements),
+        ],
+        appState: stripCollaboratorsFromAppState(appState) as AppState,
+        files: mergedFiles,
       }
 
       let thumbnail = ''
@@ -98,7 +270,7 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
         .filter((element) => element.type === 'image')
         .sort((a, b) => b.updated - a.updated)[0]
       if (latestImage) {
-        const file = files[latestImage.fileId!]
+        const file = mergedFiles[latestImage.fileId!]
         if (file) {
           thumbnail = file.dataURL
         }
@@ -115,6 +287,14 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
     appState: AppState,
     files: BinaryFiles
   ) => {
+    if (suppressNextSaveRef.current) {
+      suppressNextSaveRef.current = false
+      console.log('🖼️ Skipping one save after remote canvas sync', {
+        canvasId,
+      })
+      return
+    }
+
     // Immediate UI updates
     handleSelectionChange(elements, appState)
     // Debounced save operation
@@ -126,6 +306,17 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
       ? JSON.parse(localStorage.getItem('excalidraw-last-image-position')!)
       : null
   )
+  const initialPersistedVideoState = extractPersistedVideoState(initialData)
+  const persistedVideoElementsRef = useRef<Record<string, any>>(
+    initialPersistedVideoState.elements
+  )
+  const persistedVideoFilesRef = useRef<Record<string, BinaryFileData>>(
+    initialPersistedVideoState.files
+  )
+  const lastAppliedInitialDataSignatureRef = useRef<string>(
+    buildSceneSyncSignature(normalizeCanvasInitialData(initialData))
+  )
+  const suppressNextSaveRef = useRef(false)
   const { theme } = useTheme()
 
   // 添加自定义类名以便应用我们的CSS修复
@@ -155,6 +346,44 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
       })
     }
   }, [excalidrawAPI, theme])
+
+  useEffect(() => {
+    const persistedVideoState = extractPersistedVideoState(initialData)
+    persistedVideoElementsRef.current = persistedVideoState.elements
+    persistedVideoFilesRef.current = persistedVideoState.files
+  }, [initialData])
+
+  useEffect(() => {
+    if (!excalidrawAPI || !initialData) {
+      return
+    }
+
+    const normalizedData = normalizeCanvasInitialData(initialData)
+    const nextSignature = buildSceneSyncSignature(normalizedData)
+
+    if (lastAppliedInitialDataSignatureRef.current === nextSignature) {
+      return
+    }
+    lastAppliedInitialDataSignatureRef.current = nextSignature
+
+    console.log('🖼️ Applying refreshed canvas data to Excalidraw scene', {
+      canvasId,
+      elementCount: normalizedData?.elements?.length ?? 0,
+      fileCount: Object.keys(normalizedData?.files || {}).length,
+    })
+
+    const normalizedFiles = Object.values(
+      (normalizedData?.files || {}) as Record<string, BinaryFileData>
+    )
+    if (normalizedFiles.length > 0) {
+      excalidrawAPI.addFiles(normalizedFiles)
+    }
+
+    suppressNextSaveRef.current = true
+    excalidrawAPI.updateScene({
+      elements: normalizedData?.elements || [],
+    })
+  }, [canvasId, excalidrawAPI, initialData])
 
   const addImageToExcalidraw = useCallback(
     async (imageElement: ExcalidrawImageElement, file: BinaryFileData) => {
@@ -257,8 +486,12 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
 
         console.log('👇 Converted video elements:', videoElements)
 
-        const currentElements = excalidrawAPI.getSceneElements()
-        const newElements = [...currentElements, ...videoElements]
+      const currentElements = excalidrawAPI.getSceneElements()
+      const newElementId = videoElements[0]?.id || elementData.id
+      const newElements = [
+        ...currentElements.filter((element) => element.id !== newElementId),
+        ...videoElements,
+      ]
 
         console.log(
           '👇 Updating scene with elements count:',
@@ -267,7 +500,16 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
 
         excalidrawAPI.updateScene({
           elements: newElements,
+          appState: {
+            selectedElementIds: {
+              [newElementId]: true,
+            },
+          },
         })
+
+        setTimeout(() => {
+          excalidrawAPI.scrollToContent(newElementId, { animate: true })
+        }, 50)
 
         console.log(
           '👇 Added video embed element:',
@@ -324,14 +566,7 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
       const { link } = element
 
       // Check if this is a video URL
-      if (
-        link &&
-        (link.includes('.mp4') ||
-          link.includes('.webm') ||
-          link.includes('.ogg') ||
-          link.startsWith('blob:') ||
-          link.includes('video'))
-      ) {
+      if (isVideoLink(link)) {
         // Return the VideoPlayer component
         return (
           <VideoElement
@@ -382,6 +617,9 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
         return
       }
 
+      persistedVideoElementsRef.current[videoData.element.id] = videoData.element
+      persistedVideoFilesRef.current[videoData.file.id] = videoData.file
+
       // Create video embed element using the video URL
       addVideoEmbed(videoData.element, videoData.video_url)
     },
@@ -407,15 +645,16 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
       }}
       onChange={handleChange}
       initialData={() => {
-        const data = initialData
+        const data = normalizeCanvasInitialData(initialData)
         console.log('👇initialData', data)
-        if (data?.appState) {
-          data.appState = {
-            ...data.appState,
-            collaborators: undefined!,
-          }
+        if (!data) {
+          return null
         }
-        return data || null
+
+        return {
+          ...data,
+          appState: stripCollaboratorsFromAppState(data.appState),
+        }
       }}
       renderEmbeddable={renderEmbeddable}
       // Allow all URLs for embeddable content

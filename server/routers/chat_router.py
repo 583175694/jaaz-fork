@@ -1,6 +1,7 @@
 #server/routers/chat_router.py
 from fastapi import APIRouter, Request
 from services.chat_service import handle_chat
+from services.direct_video_service import handle_direct_video
 from services.magic_service import handle_magic
 from services.stream_service import get_stream_task
 from typing import Dict
@@ -61,6 +62,13 @@ async def magic(request: Request):
     """
     data = await request.json()
     await handle_magic(data)
+    return {"status": "done"}
+
+
+@router.post("/direct_video")
+async def direct_video(request: Request):
+    data = await request.json()
+    await handle_direct_video(data)
     return {"status": "done"}
 
 @router.post("/magic/cancel/{session_id}")

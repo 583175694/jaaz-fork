@@ -9,11 +9,51 @@ from models.config_model import ModelInfo
 from ..video_providers.video_base_provider import get_default_provider, VideoProviderBase
 # Import all providers to ensure automatic registration (don't delete these imports)
 from ..video_providers.volces_provider import VolcesVideoProvider  # type: ignore
+from ..video_providers.zenlayer_provider import ZenlayerVideoProvider  # type: ignore
+from ..video_providers.apipod_provider import APIPodVideoProvider  # type: ignore
 from .video_canvas_utils import (
     send_video_start_notification,
     send_video_error_notification,
     process_video_result,
 )
+
+
+def _get_video_provider_candidates(
+    ctx: dict[str, Any],
+    model_name: str,
+) -> List[ModelInfo]:
+    """Return provider candidates for the current video model only.
+
+    The chat context passes all selected tools together. If we fall back to that
+    list without filtering, image tools such as `nanobanana` can be mistaken as
+    video providers and crash video generation with `Unknown provider`.
+    """
+    model_info = ctx.get("model_info", {})
+    if isinstance(model_info, dict):
+        candidates = model_info.get(model_name, [])
+        if isinstance(candidates, list) and candidates:
+            return cast(List[ModelInfo], candidates)
+
+    tool_list = ctx.get("tool_list", [])
+    if not isinstance(tool_list, list):
+        return []
+
+    matched_tools = [
+        tool
+        for tool in tool_list
+        if tool.get("type") == "video"
+        and (
+            tool.get("id") == model_name
+            or tool.get("id") == f"generate_video_by_{model_name}"
+            or model_name in str(tool.get("id", ""))
+        )
+    ]
+    if matched_tools:
+        return cast(List[ModelInfo], matched_tools)
+
+    # Fallback to any selected video tool, but never to image tools.
+    video_tools = [tool for tool in tool_list if tool.get("type") == "video"]
+    return cast(List[ModelInfo], video_tools)
 
 
 async def generate_video_with_provider(
@@ -25,7 +65,9 @@ async def generate_video_with_provider(
     tool_call_id: str,
     config: Any,
     input_images: Optional[list[str]] = None,
+    source_file_ids: Optional[list[str]] = None,
     camera_fixed: bool = True,
+    provider_hint: Optional[str] = None,
     **kwargs: Any
 ) -> str:
     """
@@ -59,16 +101,13 @@ async def generate_video_with_provider(
 
     try:
         # Determine provider selection
-        model_info_list: List[ModelInfo] = cast(
-            List[ModelInfo], ctx.get('model_info', {}).get(model_name, []))
+        model_info_list = _get_video_provider_candidates(ctx, model_name)
 
-        if model_info_list == []:
-            # video registed as tool
-            model_info_list: List[ModelInfo] = cast(
-                List[ModelInfo], ctx.get('tool_list', {}))
-
-        # Use get_default_provider which already handles Jaaz prioritization
-        provider_name = get_default_provider(model_info_list)
+        if provider_hint:
+            provider_name = provider_hint
+        else:
+            # Use get_default_provider which already handles Jaaz prioritization
+            provider_name = get_default_provider(model_info_list)
 
         print(f"🎥 Using provider: {provider_name} for {model_name}")
 
@@ -89,7 +128,7 @@ async def generate_video_with_provider(
             processed_input_images = input_images
 
         # Generate video using the selected provider
-        video_url = await provider_instance.generate(
+        generation_result = await provider_instance.generate(
             prompt=prompt,
             model=model,
             resolution=resolution,
@@ -101,11 +140,19 @@ async def generate_video_with_provider(
         )
 
         # Process video result (save, update canvas, notify)
+        download_headers = None
+        video_url = generation_result
+        if isinstance(generation_result, dict):
+            video_url = generation_result.get("video_url", "")
+            download_headers = generation_result.get("download_headers")
+
         return await process_video_result(
             video_url=video_url,
             session_id=session_id,
             canvas_id=canvas_id,
-            provider_name=f"{model_name} ({provider_name})"
+            provider_name=f"{model_name} ({provider_name})",
+            download_headers=download_headers,
+            source_file_ids=source_file_ids,
         )
 
     except Exception as e:

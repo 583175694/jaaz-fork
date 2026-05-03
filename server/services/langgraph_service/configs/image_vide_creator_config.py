@@ -54,8 +54,12 @@ You MUST:
 1. Parse the XML to extract file_id attributes from <image> tags
 2. Use tools that support input_images parameter when images are present
 3. Pass the extracted file_id(s) in the input_images parameter as a list
-4. If input_images count > 1 , only use generate_image_by_gpt_image_1_jaaz (supports multiple images)
-5. For video generation → use video tools with input_images if images are present
+4. For standard text-to-image generation with no input_images, prefer generate_image_by_gpt_image_2_zenlayer when available
+5. Do not use generate_image_by_gpt_image_2_zenlayer when input_images are present, because it is text-to-image only
+6. If input_images count > 1 , only use generate_image_by_gpt_image_1_jaaz (supports multiple images)
+7. If input_images count == 1 , use a tool that explicitly supports input_images for editing/reference workflows
+8. For video generation → use video tools with input_images if images are present
+9. Do not prefer generate_image_by_nano_banana for ordinary text-to-image requests when generate_image_by_gpt_image_2_zenlayer is available
 """
 
         batch_generation_prompt = """

@@ -75,6 +75,76 @@ def _fix_chat_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return fixed_messages
 
 
+def _compact_multimodal_history(
+    messages: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Trim heavy historical base64 images from prior turns.
+
+    The current UI stores some canvas/magic interactions as full data URLs
+    inside chat history. Re-sending all older base64 images on every turn can
+    create multi-megabyte payloads and cause upstream provider failures. Keep
+    the latest user turn untouched, but strip historical inline images while
+    preserving surrounding text context.
+    """
+    if not messages:
+        return messages
+
+    last_user_index = -1
+    for index in range(len(messages) - 1, -1, -1):
+        if messages[index].get("role") == "user":
+            last_user_index = index
+            break
+
+    compacted: List[Dict[str, Any]] = []
+    for index, message in enumerate(messages):
+        if index == last_user_index:
+            compacted.append(message)
+            continue
+
+        content = message.get("content")
+        if not isinstance(content, list):
+            compacted.append(message)
+            continue
+
+        new_content: List[Dict[str, Any]] = []
+        removed_inline_images = 0
+        for item in content:
+            if item.get("type") != "image_url":
+                new_content.append(item)
+                continue
+
+            image_url = item.get("image_url", {})
+            url = image_url.get("url", "") if isinstance(image_url, dict) else ""
+            if isinstance(url, str) and url.startswith("data:"):
+                removed_inline_images += 1
+                continue
+
+            new_content.append(item)
+
+        if removed_inline_images == 0:
+            compacted.append(message)
+            continue
+
+        if not new_content:
+            new_content = [{
+                "type": "text",
+                "text": f"[{removed_inline_images} previous inline image(s) omitted from history]",
+            }]
+        elif any(item.get("type") == "text" for item in new_content):
+            for item in new_content:
+                if item.get("type") == "text" and isinstance(item.get("text"), str):
+                    item["text"] += (
+                        f"\n\n[{removed_inline_images} previous inline image(s) omitted from history]"
+                    )
+                    break
+
+        compacted_message = message.copy()
+        compacted_message["content"] = new_content
+        compacted.append(compacted_message)
+
+    return compacted
+
+
 async def langgraph_multi_agent(
     messages: List[Dict[str, Any]],
     canvas_id: str,
@@ -96,6 +166,7 @@ async def langgraph_multi_agent(
     try:
         # 0. 修复消息历史
         fixed_messages = _fix_chat_history(messages)
+        fixed_messages = _compact_multimodal_history(fixed_messages)
 
         # 2. 文本模型
         text_model_instance = _create_text_model(text_model)

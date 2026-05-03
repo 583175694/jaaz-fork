@@ -52,7 +52,7 @@ type ChatTextareaProps = {
       textModel: Model
       toolList: ToolInfo[]
     }
-  ) => void
+  ) => void | Promise<void>
   onCancelChat?: () => void
 }
 
@@ -178,7 +178,14 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
       return
     }
 
-    if (!selectedTools || selectedTools.length === 0) {
+    // Tools are optional for plain text chat. Only warn if the user is likely
+    // expecting image/video generation features without any enabled tools.
+    const hasSelectedTools = !!selectedTools && selectedTools.length > 0
+    const looksLikeMediaPrompt =
+      images.length > 0 ||
+      /生成.*(图|图片|视频)|画一张|做一张|image|video|draw|generate/i.test(prompt)
+
+    if (!hasSelectedTools && looksLikeMediaPrompt) {
       toast.warning(t('chat:textarea.selectTool'))
     }
 
@@ -247,7 +254,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
 
     onSendMessages(newMessage, {
       textModel: textModel,
-      toolList: selectedTools && selectedTools.length > 0 ? selectedTools : [],
+      toolList: hasSelectedTools ? selectedTools : [],
     })
   }, [
     pending,
@@ -260,6 +267,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
     t,
     selectedAspectRatio,
     quantity,
+    images.length,
     authStatus.is_logged_in,
     setShowLoginDialog,
     balance,
@@ -455,6 +463,10 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
         onFocus={() => setIsFocused(true)}
         onBlur={() => setIsFocused(false)}
         onKeyDown={(e) => {
+          if (e.nativeEvent.isComposing) {
+            return
+          }
+
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault()
             handleSendPrompt()
@@ -577,7 +589,10 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
             className="shrink-0 relative"
             variant="default"
             size="icon"
-            onClick={handleCancelChat}
+            onClick={(e) => {
+              e.stopPropagation()
+              void handleCancelChat()
+            }}
           >
             <Loader2 className="size-5.5 animate-spin absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
             <Square className="size-2 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
@@ -587,8 +602,11 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
             className="shrink-0"
             variant="default"
             size="icon"
-            onClick={handleSendPrompt}
-            disabled={!textModel || !selectedTools || prompt.length === 0}
+            onClick={(e) => {
+              e.stopPropagation()
+              void handleSendPrompt()
+            }}
+            disabled={!textModel || prompt.trim().length === 0}
           >
             <ArrowUp className="size-4" />
           </Button>
