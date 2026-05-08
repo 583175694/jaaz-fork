@@ -208,10 +208,35 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
       text_content = text_content + '\n\n' + additionalInfo
     }
 
+    const looksLikeVideoPrompt =
+      /生成.*视频|视频|广告片|短片|video|clip|commercial/i.test(prompt)
+    const shouldAttachStartEndFrameSemantics =
+      images.length >= 2 && looksLikeVideoPrompt
+
     if (images.length > 0) {
+      if (shouldAttachStartEndFrameSemantics) {
+        const startFrame = images[0]
+        const endFrame = images[1]
+        text_content += `\n\n<selection_mode>start_end_frames</selection_mode>`
+        text_content += `\n<start_frame file_id="${startFrame.file_id}" />`
+        text_content += `\n<end_frame file_id="${endFrame.file_id}" />`
+        text_content +=
+          `\n<video_generation_intent>` +
+          `请将第 1 张图视为首帧，第 2 张图视为尾帧。` +
+          `必须基于当前对话中已有的创意设定、场景说明、人物动作、产品卖点与广告目标来生成视频，` +
+          `保持同一场景、同一人物、同一产品与同一灯光逻辑，视频需要从首帧自然过渡到尾帧。` +
+          `</video_generation_intent>`
+      }
+
       text_content += `\n\n<input_images count="${images.length}">`
       images.forEach((image, index) => {
-        text_content += `\n<image index="${index + 1}" file_id="${image.file_id}" width="${image.width}" height="${image.height}" />`
+        const role =
+          shouldAttachStartEndFrameSemantics && index === 0
+            ? 'start_frame'
+            : shouldAttachStartEndFrameSemantics && index === 1
+              ? 'end_frame'
+              : 'reference'
+        text_content += `\n<image index="${index + 1}" role="${role}" file_id="${image.file_id}" width="${image.width}" height="${image.height}" />`
       })
       text_content += `\n</input_images>`
     }

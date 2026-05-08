@@ -115,7 +115,22 @@ def _compact_multimodal_history(
 
             image_url = item.get("image_url", {})
             url = image_url.get("url", "") if isinstance(image_url, dict) else ""
-            if isinstance(url, str) and url.startswith("data:"):
+            if not isinstance(url, str):
+                removed_inline_images += 1
+                continue
+
+            normalized_url = url.strip().lower()
+            is_inline_data_url = normalized_url.startswith("data:")
+            is_relative_url = normalized_url.startswith("/")
+            is_local_url = (
+                normalized_url.startswith("http://localhost")
+                or normalized_url.startswith("https://localhost")
+                or normalized_url.startswith("http://127.0.0.1")
+                or normalized_url.startswith("https://127.0.0.1")
+                or normalized_url.startswith("http://0.0.0.0")
+                or normalized_url.startswith("https://0.0.0.0")
+            )
+            if is_inline_data_url or is_relative_url or is_local_url:
                 removed_inline_images += 1
                 continue
 
@@ -145,6 +160,82 @@ def _compact_multimodal_history(
     return compacted
 
 
+def _extract_latest_user_text(messages: List[Dict[str, Any]]) -> str:
+    for message in reversed(messages):
+        if message.get("role") != "user":
+            continue
+
+        content = message.get("content")
+        if isinstance(content, str):
+            return content.strip()
+
+        if not isinstance(content, list):
+            return ""
+
+        text_parts: List[str] = []
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") == "text" and isinstance(item.get("text"), str):
+                text_parts.append(item["text"].strip())
+        return "\n".join(part for part in text_parts if part).strip()
+
+    return ""
+
+
+def _choose_initial_agent(
+    fixed_messages: List[Dict[str, Any]],
+    last_agent: Optional[str],
+    agent_names: List[str],
+    tool_list: List[ToolInfoJson],
+) -> str:
+    if last_agent:
+        return last_agent
+
+    latest_user_text = _extract_latest_user_text(fixed_messages).lower()
+    if not latest_user_text:
+        return agent_names[0]
+
+    has_media_tools = any(
+        tool.get("type") in {"image", "video"} for tool in tool_list
+    )
+    if not has_media_tools:
+        return agent_names[0]
+
+    creator_agent = "image_video_creator"
+    if creator_agent not in agent_names:
+        return agent_names[0]
+
+    media_intent_signals = [
+        "image",
+        "images",
+        "picture",
+        "pictures",
+        "storyboard",
+        "keyframe",
+        "video",
+        "videos",
+        "shot",
+        "shots",
+        "commercial storyboard",
+        "premium commercial storyboard",
+        "<input_images",
+        "分镜",
+        "分镜图",
+        "图片",
+        "图像",
+        "视频",
+        "短片",
+        "广告片",
+        "画面",
+    ]
+
+    if any(signal in latest_user_text for signal in media_intent_signals):
+        return creator_agent
+
+    return agent_names[0]
+
+
 async def langgraph_multi_agent(
     messages: List[Dict[str, Any]],
     canvas_id: str,
@@ -167,6 +258,17 @@ async def langgraph_multi_agent(
         # 0. 修复消息历史
         fixed_messages = _fix_chat_history(messages)
         fixed_messages = _compact_multimodal_history(fixed_messages)
+        print(
+            "🤖 langgraph_multi_agent start",
+            {
+                "session_id": session_id,
+                "canvas_id": canvas_id,
+                "incoming_message_count": len(messages),
+                "fixed_message_count": len(fixed_messages),
+                "text_model": f"{text_model.get('provider')}:{text_model.get('model')}",
+                "tool_ids": [tool.get("id") for tool in tool_list],
+            },
+        )
 
         # 2. 文本模型
         text_model_instance = _create_text_model(text_model)
@@ -183,11 +285,18 @@ async def langgraph_multi_agent(
             fixed_messages, agent_names)
 
         print('👇last_agent', last_agent)
+        initial_agent = _choose_initial_agent(
+            fixed_messages=fixed_messages,
+            last_agent=last_agent,
+            agent_names=agent_names,
+            tool_list=tool_list,
+        )
+        print('👇initial_agent', initial_agent)
 
         # 4. 创建智能体群组
         swarm = create_swarm(
             agents=agents,  # type: ignore
-            default_active_agent=last_agent if last_agent else agent_names[0]
+            default_active_agent=initial_agent
         )
 
         # 5. 创建上下文
@@ -195,12 +304,28 @@ async def langgraph_multi_agent(
             'canvas_id': canvas_id,
             'session_id': session_id,
             'tool_list': tool_list,
+            'messages': fixed_messages,
         }
+        print(
+            "🤖 langgraph context ready",
+            {
+                "session_id": session_id,
+                "initial_agent": initial_agent,
+                "tool_count": len(tool_list),
+            },
+        )
 
         # 6. 流处理
         processor = StreamProcessor(
             session_id, db_service, send_to_websocket)  # type: ignore
         await processor.process_stream(swarm, fixed_messages, context)
+        print(
+            "🤖 langgraph_multi_agent done",
+            {
+                "session_id": session_id,
+                "canvas_id": canvas_id,
+            },
+        )
 
     except Exception as e:
         await _handle_error(e, session_id)

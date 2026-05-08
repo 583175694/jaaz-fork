@@ -116,6 +116,17 @@ async def save_video_to_canvas(
 
         # Save updated canvas data
         await db_service.save_canvas_data(canvas_id, json.dumps(canvas_data["data"]))
+        print(
+            "🎥 Video persisted to canvas",
+            {
+                "session_id": session_id,
+                "canvas_id": canvas_id,
+                "filename": filename,
+                "file_id": file_id,
+                "element_id": new_video_element.get("id"),
+                "source_file_ids": source_file_ids or [],
+            },
+        )
 
         return filename, file_data, new_video_element
 

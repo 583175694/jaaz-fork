@@ -4,9 +4,40 @@ from services.chat_service import handle_chat
 from services.db_service import db_service
 import asyncio
 import json
+import traceback
 from typing import Any, Dict
 
 router = APIRouter(prefix="/api/canvas")
+
+
+def _log_background_task_result(task: asyncio.Task[Any], *, canvas_id: str, session_id: str) -> None:
+    try:
+        task.result()
+        print(
+            "🖼️ handle_chat task finished",
+            {
+                "canvas_id": canvas_id,
+                "session_id": session_id,
+            },
+        )
+    except asyncio.CancelledError:
+        print(
+            "🖼️ handle_chat task cancelled",
+            {
+                "canvas_id": canvas_id,
+                "session_id": session_id,
+            },
+        )
+    except Exception as exc:
+        print(
+            "🖼️ handle_chat task failed",
+            {
+                "canvas_id": canvas_id,
+                "session_id": session_id,
+                "error": str(exc),
+            },
+        )
+        traceback.print_exc()
 
 
 def _merge_persisted_video_data(
@@ -65,9 +96,40 @@ async def create_canvas(request: Request):
     data = await request.json()
     id = data.get('canvas_id')
     name = data.get('name')
+    session_id = data.get('session_id')
+    print(
+        "🖼️ /api/canvas/create",
+        {
+            "canvas_id": id,
+            "session_id": session_id,
+            "name": name,
+            "message_count": len(data.get("messages", []) or []),
+        },
+    )
 
-    asyncio.create_task(handle_chat(data))
     await db_service.create_canvas(id, name)
+    print(
+        "🖼️ canvas row created",
+        {
+            "canvas_id": id,
+            "session_id": session_id,
+        },
+    )
+    task = asyncio.create_task(handle_chat(data))
+    task.add_done_callback(
+        lambda completed_task: _log_background_task_result(
+            completed_task,
+            canvas_id=id,
+            session_id=session_id,
+        )
+    )
+    print(
+        "🖼️ handle_chat task scheduled",
+        {
+            "canvas_id": id,
+            "session_id": session_id,
+        },
+    )
     return {"id": id }
 
 @router.get("/{id}")

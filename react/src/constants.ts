@@ -56,6 +56,11 @@ export const TOOL_CALL_NAME_MAPPING: { [key in ToolCallFunctionName]: string } =
     finish: 'Finish',
   }
 
+;(TOOL_CALL_NAME_MAPPING as Record<string, string>)['generate_video_by_veo3_apipod'] =
+  'Google Veo 3.1 Fast'
+;(TOOL_CALL_NAME_MAPPING as Record<string, string>)['generate_video_by_veo3_zenlayer'] =
+  'Google Veo 3.1 Fast'
+
 export const LOGO_URL = 'https://jaaz.app/favicon.ico'
 
 export const DEFAULT_SYSTEM_PROMPT = `You are a professional art design agent. You can write very professional image prompts to generate aesthetically pleasing images that best fulfilling and matching the user's request.

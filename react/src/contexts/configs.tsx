@@ -14,7 +14,7 @@ const getPreferredDefaultTools = (toolList: ToolInfo[]): ToolInfo[] => {
     toolList.find((tool) => tool.type === 'image')
 
   const preferredVideoTool =
-    toolList.find((tool) => tool.id === 'generate_video_by_veo3_zenlayer') ||
+    toolList.find((tool) => tool.id === 'generate_video_by_veo3_apipod') ||
     toolList.find((tool) => tool.provider === 'apipodvideo' && tool.type === 'video') ||
     toolList.find((tool) => tool.type === 'video')
 

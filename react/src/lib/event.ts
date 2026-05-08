@@ -30,6 +30,7 @@ export type TCanvasGenerateVideoEvent = {
   duration: number
   aspectRatio: string
   resolution: string
+  selectionMode?: 'start_end_frames'
 }
 
 export type TMaterialAddImagesToChatEvent = {

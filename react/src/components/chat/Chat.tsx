@@ -453,6 +453,30 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     })
   }, [])
 
+  const handleVideoGenerated = useCallback(
+    (data: TEvents['Socket::Session::VideoGenerated']) => {
+      if (
+        data.canvas_id &&
+        data.canvas_id !== canvasId &&
+        data.session_id !== sessionId
+      ) {
+        return
+      }
+
+      console.log('🎥 Chat received video_generated', data)
+      setPending(false)
+      window.dispatchEvent(
+        new CustomEvent('jaaz:refresh-canvas', {
+          detail: {
+            canvasId,
+            reason: 'video-generated-socket',
+          },
+        })
+      )
+    },
+    [canvasId, sessionId]
+  )
+
   useEffect(() => {
     const handleScroll = () => {
       if (scrollRef.current) {
@@ -475,6 +499,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     eventBus.on('Socket::Session::ToolCallArguments', handleToolCallArguments)
     eventBus.on('Socket::Session::ToolCallResult', handleToolCallResult)
     eventBus.on('Socket::Session::ImageGenerated', handleImageGenerated)
+    eventBus.on('Socket::Session::VideoGenerated', handleVideoGenerated)
     eventBus.on('Socket::Session::AllMessages', handleAllMessages)
     eventBus.on('Socket::Session::Done', handleDone)
     eventBus.on('Socket::Session::Error', handleError)
@@ -502,6 +527,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
       )
       eventBus.off('Socket::Session::ToolCallResult', handleToolCallResult)
       eventBus.off('Socket::Session::ImageGenerated', handleImageGenerated)
+      eventBus.off('Socket::Session::VideoGenerated', handleVideoGenerated)
       eventBus.off('Socket::Session::AllMessages', handleAllMessages)
       eventBus.off('Socket::Session::Done', handleDone)
       eventBus.off('Socket::Session::Error', handleError)

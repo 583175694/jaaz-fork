@@ -10,8 +10,6 @@ type CanvasVideoGeneratorProps = {
 }
 
 const MAX_REFERENCE_IMAGES = 2
-const DEFAULT_VIDEO_PROMPT =
-  '基于这些参考图生成一个 6 秒视频，16:9，1080p，镜头缓慢推进'
 
 const getConfiguredVideoModel = async () => {
   const response = await fetch('/api/config')
@@ -57,10 +55,11 @@ const CanvasVideoGenerator = ({
 
     eventBus.emit('Canvas::GenerateVideo', {
       selectedImages: normalizedSelectedImages,
-      prompt: DEFAULT_VIDEO_PROMPT,
+      prompt: '',
       duration: 6,
       aspectRatio: '16:9',
       resolution: '1080p',
+      selectionMode: 'start_end_frames',
     })
 
     excalidrawAPI?.updateScene({

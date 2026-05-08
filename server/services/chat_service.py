@@ -11,6 +11,7 @@ from services.db_service import db_service
 from services.langgraph_service import langgraph_multi_agent
 from services.websocket_service import send_to_websocket
 from services.stream_service import add_stream_task, remove_stream_task
+from services.ad_generation_runtime import maybe_compile_ad_image_messages
 from models.config_model import ModelInfo
 
 
@@ -42,9 +43,34 @@ async def handle_chat(data: Dict[str, Any]) -> None:
     tool_list: List[ToolInfoJson] = data.get('tool_list', [])
 
     print('👇 chat_service got tool_list', tool_list)
+    print(
+        "💬 handle_chat start",
+        {
+            "session_id": session_id,
+            "canvas_id": canvas_id,
+            "message_count": len(messages),
+            "text_model": f"{text_model.get('provider')}:{text_model.get('model')}",
+        },
+    )
 
     # TODO: save and fetch system prompt from db or settings config
     system_prompt: Optional[str] = data.get('system_prompt')
+
+    try:
+        messages = await maybe_compile_ad_image_messages(messages, text_model)
+        print(
+            "💬 handle_chat after prompt compile",
+            {
+                "session_id": session_id,
+                "message_count": len(messages),
+                "latest_role": messages[-1].get("role") if messages else None,
+            },
+        )
+    except Exception as exc:
+        print("⚠️ Failed to pre-compile advertising image prompt, continuing with original messages", {
+            "error": str(exc),
+            "session_id": session_id,
+        })
 
     # If there is only one message, create a new chat session
     if len(messages) == 1:
@@ -52,18 +78,46 @@ async def handle_chat(data: Dict[str, Any]) -> None:
         prompt = messages[0].get('content', '')
         # TODO: Better way to determin when to create new chat session.
         await db_service.create_chat_session(session_id, text_model.get('model'), text_model.get('provider'), canvas_id, (prompt[:200] if isinstance(prompt, str) else ''))
+        print(
+            "💬 handle_chat session created",
+            {
+                "session_id": session_id,
+                "canvas_id": canvas_id,
+            },
+        )
 
     await db_service.create_message(session_id, messages[-1].get('role', 'user'), json.dumps(messages[-1])) if len(messages) > 0 else None
+    if len(messages) > 0:
+        print(
+            "💬 handle_chat latest message persisted",
+            {
+                "session_id": session_id,
+                "role": messages[-1].get('role', 'user'),
+            },
+        )
 
     # Create and start langgraph_agent task for chat processing
     task = asyncio.create_task(langgraph_multi_agent(
         messages, canvas_id, session_id, text_model, tool_list, system_prompt))
+    print(
+        "💬 handle_chat langgraph task created",
+        {
+            "session_id": session_id,
+            "canvas_id": canvas_id,
+        },
+    )
 
     # Register the task in stream_tasks (for possible cancellation)
     add_stream_task(session_id, task)
     try:
         # Await completion of the langgraph_agent task
         await task
+        print(
+            "💬 handle_chat langgraph task completed",
+            {
+                "session_id": session_id,
+            },
+        )
     except asyncio.exceptions.CancelledError:
         print(f"🛑Session {session_id} cancelled during stream")
     finally:

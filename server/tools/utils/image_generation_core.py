@@ -3,6 +3,7 @@ Image generation core module
 Contains the main orchestration logic for image generation across different providers
 """
 
+import re
 from typing import Optional, Dict, Any
 from common import DEFAULT_PORT
 from tools.utils.image_utils import process_input_image
@@ -16,6 +17,7 @@ from ..image_providers.replicate_provider import ReplicateImageProvider
 from ..image_providers.volces_provider import VolcesProvider
 from ..image_providers.wavespeed_provider import WavespeedProvider
 from ..image_providers.zenlayer_openai_image_provider import ZenlayerOpenAIImageProvider
+from ..image_providers.apipod_gpt_image_provider import APIPodGPTImageProvider
 
 # from ..image_providers.comfyui_provider import ComfyUIProvider
 from .image_canvas_utils import (
@@ -31,7 +33,40 @@ IMAGE_PROVIDERS: dict[str, ImageProviderBase] = {
     "volces": VolcesProvider(),
     "wavespeed": WavespeedProvider(),
     "zenlayer": ZenlayerOpenAIImageProvider(),
+    "apipodgptimage": APIPodGPTImageProvider(),
 }
+
+
+def _infer_storyboard_metadata(prompt: str, aspect_ratio: str) -> Dict[str, Any]:
+    normalized_prompt = str(prompt or "").strip()
+    lower_prompt = normalized_prompt.lower()
+
+    narrative_role = "generic_storyboard_frame"
+    if any(signal in lower_prompt for signal in ["opening", "hook", "开场", "首镜", "scene 1", "shot 1"]):
+        narrative_role = "opening_hook"
+    elif any(signal in lower_prompt for signal in ["hero packshot", "收尾", "结尾", "resolution", "hero resolution", "scene 4", "shot 4"]):
+        narrative_role = "hero_resolution"
+    elif any(signal in lower_prompt for signal in ["reveal", "product reveal", "卖点", "scene 2", "shot 2"]):
+        narrative_role = "product_reveal"
+    elif any(signal in lower_prompt for signal in ["benefit", "demonstration", "scene 3", "shot 3"]):
+        narrative_role = "benefit_demonstration"
+
+    shot_id_match = re.search(r"\b(?:scene|shot)\s*([0-9]+)\b", normalized_prompt, flags=re.I)
+    shot_id = ""
+    if shot_id_match:
+        shot_id = f"S{shot_id_match.group(1)}"
+    else:
+        cn_match = re.search(r"分镜([一二三四五六七八九十0-9]+)", normalized_prompt)
+        if cn_match:
+            shot_id = f"S{cn_match.group(1)}"
+
+    summary = normalized_prompt[:280]
+    return {
+        "shot_id": shot_id,
+        "narrative_role": narrative_role,
+        "summary": summary,
+        "aspect_ratio": aspect_ratio,
+    }
 
 
 async def generate_image_with_provider(
@@ -64,6 +99,19 @@ async def generate_image_with_provider(
     if not provider_instance:
         raise ValueError(f"Unknown provider: {provider}")
 
+    print(
+        "🖼️ generate_image_with_provider start",
+        {
+            "session_id": session_id,
+            "canvas_id": canvas_id,
+            "provider": provider,
+            "model": model,
+            "aspect_ratio": aspect_ratio,
+            "has_input_images": bool(input_images),
+            "prompt_preview": prompt[:160],
+        },
+    )
+
     # Process input images for the provider
     processed_input_images: list[str] | None = None
     if input_images:
@@ -83,6 +131,7 @@ async def generate_image_with_provider(
         "aspect_ratio": aspect_ratio,
         "input_images": input_images or [],
     }
+    storyboard_metadata = _infer_storyboard_metadata(prompt, aspect_ratio)
 
     # Generate image using the selected provider
     mime_type, width, height, filename = await provider_instance.generate(
@@ -92,10 +141,41 @@ async def generate_image_with_provider(
         input_images=processed_input_images,
         metadata=metadata,
     )
+    print(
+        "🖼️ provider image generated",
+        {
+            "session_id": session_id,
+            "canvas_id": canvas_id,
+            "provider": provider,
+            "model": model,
+            "filename": filename,
+            "mime_type": mime_type,
+            "width": width,
+            "height": height,
+        },
+    )
 
     # Save image to canvas
     image_url = await save_image_to_canvas(
-        session_id, canvas_id, filename, mime_type, width, height
+        session_id,
+        canvas_id,
+        filename,
+        mime_type,
+        width,
+        height,
+        generation_metadata=metadata,
+        storyboard_metadata=storyboard_metadata,
+    )
+    print(
+        "🖼️ image persisted to canvas",
+        {
+            "session_id": session_id,
+            "canvas_id": canvas_id,
+            "provider": provider,
+            "model": model,
+            "filename": filename,
+            "image_url": image_url,
+        },
     )
 
     return f"image generated successfully ![image_id: {filename}](http://localhost:{DEFAULT_PORT}{image_url})"

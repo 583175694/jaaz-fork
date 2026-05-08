@@ -4,7 +4,7 @@ import { uploadImage } from '@/api/upload'
 import { eventBus, TCanvasGenerateVideoEvent } from '@/lib/event'
 import { dataURLToFile } from '@/lib/utils'
 import { Message, PendingType } from '@/types/types'
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 
 const MAX_REFERENCE_IMAGES = 2
@@ -26,16 +26,37 @@ const ChatCanvasVideoGenerator: React.FC<ChatCanvasVideoGeneratorProps> = ({
   setPending,
   scrollToBottom,
 }) => {
+  const inFlightRef = useRef(false)
+
   const handleGenerateVideo = useCallback(
     async (data: TCanvasGenerateVideoEvent) => {
+      if (inFlightRef.current) {
+        toast.info('视频生成正在进行中，请等待当前任务完成')
+        return
+      }
+
       const selectedImages = data.selectedImages.slice(0, MAX_REFERENCE_IMAGES)
       if (selectedImages.length === 0) {
         return
       }
 
+      inFlightRef.current = true
       setPending('text')
 
       try {
+        const needsCanvasFileLookup = selectedImages.some((selectedImage) => {
+          const fileId = String(selectedImage.fileId || '')
+          return (
+            fileId.startsWith('im_') ||
+            fileId.startsWith('vi_') ||
+            !fileId.includes('.')
+          )
+        })
+
+        const canvasFiles = needsCanvasFileLookup
+          ? ((await getCanvas(canvasId))?.data?.files || {})
+          : {}
+
         const resolvedImages = await Promise.all(
           selectedImages.map(async (selectedImage) => {
             const hasInlineDataUrl =
@@ -43,27 +64,43 @@ const ChatCanvasVideoGenerator: React.FC<ChatCanvasVideoGeneratorProps> = ({
               selectedImage.base64.startsWith('data:')
 
             let fileId = selectedImage.fileId
+            let imageUrl = `/api/file/${fileId}`
+
             if (hasInlineDataUrl && selectedImage.base64) {
               const file = dataURLToFile(selectedImage.base64, selectedImage.fileId)
               const uploaded = await uploadImage(file)
               fileId = uploaded.file_id
+              imageUrl = `/api/file/${fileId}`
+            } else {
+              const canvasFile = canvasFiles[fileId]
+              const canvasDataUrl =
+                typeof canvasFile?.dataURL === 'string' ? canvasFile.dataURL : ''
+              if (canvasDataUrl) {
+                imageUrl = canvasDataUrl
+              }
             }
 
             return {
               ...selectedImage,
               fileId,
-              imageUrl: `/api/file/${fileId}`,
+              imageUrl,
             }
           })
         )
 
         const duration = data.duration
+        const startFrame = resolvedImages[0]
+        const endFrame = resolvedImages.length > 1 ? resolvedImages[1] : resolvedImages[0]
         const inputImagesXml = resolvedImages
           .map(
             (image, index) =>
-              `<image index="${index + 1}" file_id="${image.fileId}" width="${image.width}" height="${image.height}" />`
+              `<image index="${index + 1}" role="${index === 0 ? 'start_frame' : index === 1 ? 'end_frame' : 'reference'}" file_id="${image.fileId}" width="${image.width}" height="${image.height}" />`
           )
           .join('\n')
+        const videoIntentText =
+          '请基于当前会话中已经形成的广告创意、分镜说明和所选参考图生成视频。\n' +
+          '这是一条画布里的“选中分镜生成视频”操作请求，本身不提供新的创意内容；请优先继承上文已有的场景、人物、产品卖点、镜头职责和广告收束逻辑。\n' +
+          '将第 1 张图视为首帧，将第 2 张图视为尾帧；视频需要从首帧分镜自然过渡到尾帧分镜，保持人物、产品、场景与灯光的连续性。\n\n'
 
         const message: Message = {
           role: 'user',
@@ -71,7 +108,10 @@ const ChatCanvasVideoGenerator: React.FC<ChatCanvasVideoGeneratorProps> = ({
             {
               type: 'text',
               text:
-                `${data.prompt}\n\n` +
+                `${videoIntentText}` +
+                `<selection_mode>start_end_frames</selection_mode>\n` +
+                `<start_frame file_id="${startFrame.fileId}" />\n` +
+                `<end_frame file_id="${endFrame.fileId}" />\n` +
                 `<duration>${duration}</duration>\n` +
                 `<aspect_ratio>${data.aspectRatio}</aspect_ratio>\n` +
                 `<input_images count="${resolvedImages.length}">\n` +
@@ -96,10 +136,13 @@ const ChatCanvasVideoGenerator: React.FC<ChatCanvasVideoGeneratorProps> = ({
           canvasId,
           newMessages: newMessages,
           fileIds: resolvedImages.map((image) => image.fileId),
-          prompt: data.prompt,
+          prompt: '',
           duration,
           aspectRatio: data.aspectRatio,
           resolution: data.resolution,
+          selectionMode: 'start_end_frames',
+          startFrameFileId: startFrame.fileId,
+          endFrameFileId: endFrame.fileId,
         })
 
         const startedAt = Date.now()
@@ -146,6 +189,8 @@ const ChatCanvasVideoGenerator: React.FC<ChatCanvasVideoGeneratorProps> = ({
           description: String(error),
         })
         setPending(false)
+      } finally {
+        inFlightRef.current = false
       }
     },
     [

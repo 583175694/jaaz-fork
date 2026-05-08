@@ -91,10 +91,30 @@ async def generate_new_image_element(
     }
 
 
-async def save_image_to_canvas(session_id: str, canvas_id: str, filename: str, mime_type: str, width: int, height: int) -> str:
+async def save_image_to_canvas(
+    session_id: str,
+    canvas_id: str,
+    filename: str,
+    mime_type: str,
+    width: int,
+    height: int,
+    generation_metadata: Optional[Dict[str, Any]] = None,
+    storyboard_metadata: Optional[Dict[str, Any]] = None,
+) -> str:
     """Save image to canvas with proper locking and positioning"""
     # Use lock to ensure atomicity of the save process
     async with canvas_lock_manager.lock_canvas(canvas_id):
+        print(
+            "🖼️ save_image_to_canvas start",
+            {
+                "session_id": session_id,
+                "canvas_id": canvas_id,
+                "filename": filename,
+                "mime_type": mime_type,
+                "width": width,
+                "height": height,
+            },
+        )
         # Fetch canvas data once inside the lock
         canvas: Optional[Dict[str, Any]] = await db_service.get_canvas_data(canvas_id)
         if canvas is None:
@@ -116,6 +136,10 @@ async def save_image_to_canvas(session_id: str, canvas_id: str, filename: str, m
             'dataURL': url,
             'created': int(time.time() * 1000),
         }
+        if generation_metadata:
+            file_data['generationMeta'] = generation_metadata
+        if storyboard_metadata:
+            file_data['storyboardMeta'] = storyboard_metadata
 
         new_image_element: Dict[str, Any] = await generate_new_image_element(
             canvas_id,
@@ -136,6 +160,17 @@ async def save_image_to_canvas(session_id: str, canvas_id: str, filename: str, m
 
         # Save the updated canvas data back to the database
         await db_service.save_canvas_data(canvas_id, json.dumps(canvas_data))
+        print(
+            "🖼️ save_image_to_canvas saved",
+            {
+                "session_id": session_id,
+                "canvas_id": canvas_id,
+                "file_id": file_id,
+                "element_id": new_image_element.get("id"),
+                "elements_count": len(elements_list),
+                "files_count": len(canvas_data["files"]),
+            },
+        )
 
         # Broadcast image generation message to frontend
         await broadcast_session_update(session_id, canvas_id, {
@@ -144,6 +179,15 @@ async def save_image_to_canvas(session_id: str, canvas_id: str, filename: str, m
             'file': file_data,
             'image_url': image_url,
         })
+        print(
+            "🖼️ save_image_to_canvas broadcasted",
+            {
+                "session_id": session_id,
+                "canvas_id": canvas_id,
+                "file_id": file_id,
+                "image_url": image_url,
+            },
+        )
 
         return image_url
 

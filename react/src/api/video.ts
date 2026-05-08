@@ -9,6 +9,9 @@ export const sendDirectVideoGenerate = async (payload: {
   duration: number
   aspectRatio: string
   resolution: string
+  selectionMode?: 'start_end_frames'
+  startFrameFileId?: string
+  endFrameFileId?: string
 }) => {
   const response = await fetch('/api/direct_video', {
     method: 'POST',
@@ -24,6 +27,9 @@ export const sendDirectVideoGenerate = async (payload: {
       duration: payload.duration,
       aspect_ratio: payload.aspectRatio,
       resolution: payload.resolution,
+      selection_mode: payload.selectionMode,
+      start_frame_file_id: payload.startFrameFileId,
+      end_frame_file_id: payload.endFrameFileId,
     }),
   })
   if (!response.ok) {

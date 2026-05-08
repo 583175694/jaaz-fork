@@ -26,6 +26,14 @@ class StreamProcessor:
             context: 上下文信息
         """
         self.last_saved_message_index = len(messages) - 1
+        print(
+            "🌊 StreamProcessor start",
+            {
+                "session_id": self.session_id,
+                "initial_message_count": len(messages),
+                "initial_last_saved_index": self.last_saved_message_index,
+            },
+        )
 
         compiled_swarm = swarm.compile()
 
@@ -37,6 +45,13 @@ class StreamProcessor:
             await self._handle_chunk(chunk)
 
         # 发送完成事件
+        print(
+            "🌊 StreamProcessor completed",
+            {
+                "session_id": self.session_id,
+                "final_last_saved_index": self.last_saved_message_index,
+            },
+        )
         await self.websocket_service(self.session_id, {
             'type': 'done'
         })
@@ -59,6 +74,21 @@ class StreamProcessor:
         if not isinstance(oai_messages, list):
             oai_messages = [oai_messages] if oai_messages else []
 
+        assistant_names = [
+            msg.get("name")
+            for msg in oai_messages
+            if isinstance(msg, dict) and msg.get("role") == "assistant" and msg.get("name")
+        ]
+        if assistant_names:
+            print(
+                "🌊 values chunk assistants",
+                {
+                    "session_id": self.session_id,
+                    "assistant_names_tail": assistant_names[-3:],
+                    "message_count": len(oai_messages),
+                },
+            )
+
         # 发送所有消息到前端
         await self.websocket_service(self.session_id, {
             'type': 'all_messages',
@@ -69,6 +99,15 @@ class StreamProcessor:
         for i in range(self.last_saved_message_index + 1, len(oai_messages)):
             new_message = oai_messages[i]
             if len(oai_messages) > 0:  # 确保有消息才保存
+                print(
+                    "💾 Persisting streamed message",
+                    {
+                        "session_id": self.session_id,
+                        "index": i,
+                        "role": new_message.get("role", "user"),
+                        "name": new_message.get("name"),
+                    },
+                )
                 await self.db_service.create_message(
                     self.session_id,
                     new_message.get('role', 'user'),
@@ -85,7 +124,6 @@ class StreamProcessor:
             if isinstance(ai_message_chunk, ToolMessage):
                 # 工具调用结果之后会在 values 类型中发送到前端，这里会更快出现一些
                 oai_message = convert_to_openai_messages([ai_message_chunk])[0]
-                print('👇toolcall res oai_message', oai_message)
                 await self.websocket_service(self.session_id, {
                     'type': 'tool_call_result',
                     'id': ai_message_chunk.tool_call_id,
@@ -111,7 +149,14 @@ class StreamProcessor:
     async def _handle_tool_calls(self, tool_calls: List[ToolCall]) -> None:
         """处理工具调用"""
         self.tool_calls = [tc for tc in tool_calls if tc.get('name')]
-        print('😘tool_call event', tool_calls)
+        print(
+            "🛠️ tool calls detected",
+            {
+                "session_id": self.session_id,
+                "tool_names": [tc.get("name") for tc in self.tool_calls],
+                "tool_ids": [tc.get("id") for tc in self.tool_calls],
+            },
+        )
 
         # 需要确认的工具列表
         TOOLS_REQUIRING_CONFIRMATION = {

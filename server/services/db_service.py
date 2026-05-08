@@ -1,12 +1,14 @@
 import sqlite3
 import json
 import os
+import re
 from typing import List, Dict, Any, Optional
 import aiosqlite
 from .config_service import USER_DATA_DIR
 from .migrations.manager import MigrationManager, CURRENT_VERSION
 
 DB_PATH = os.path.join(USER_DATA_DIR, "localmanus.db")
+CANVAS_FILE_URL_ID_PATTERN = re.compile(r"^/api/file/(im_[^/?#]+|vi_[^/?#]+)$")
 
 class DatabaseService:
     def __init__(self):
@@ -47,7 +49,7 @@ class DatabaseService:
         """Create a new canvas"""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
-                INSERT INTO canvases (id, name)
+                INSERT OR IGNORE INTO canvases (id, name)
                 VALUES (?, ?)
             """, (id, name))
             await db.commit()
@@ -86,6 +88,26 @@ class DatabaseService:
         """Get chat history for a session"""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = sqlite3.Row
+            session_cursor = await db.execute("""
+                SELECT canvas_id
+                FROM chat_sessions
+                WHERE id = ?
+            """, (session_id,))
+            session_row = await session_cursor.fetchone()
+            canvas_data: Dict[str, Any] = {}
+            if session_row and session_row["canvas_id"]:
+                canvas_cursor = await db.execute("""
+                    SELECT data
+                    FROM canvases
+                    WHERE id = ?
+                """, (session_row["canvas_id"],))
+                canvas_row = await canvas_cursor.fetchone()
+                if canvas_row and canvas_row["data"]:
+                    try:
+                        canvas_data = json.loads(canvas_row["data"])
+                    except Exception:
+                        canvas_data = {}
+
             cursor = await db.execute("""
                 SELECT role, message, id
                 FROM chat_messages
@@ -100,11 +122,71 @@ class DatabaseService:
                 if row_dict['message']:
                     try:
                         msg = json.loads(row_dict['message'])
+                        msg = self._normalize_message_asset_urls(msg, canvas_data)
                         messages.append(msg)
                     except:
                         pass
                 
             return messages
+
+    def _normalize_message_asset_urls(
+        self,
+        message: Dict[str, Any],
+        canvas_data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        content = message.get("content")
+        if not isinstance(content, list):
+            return message
+
+        files = canvas_data.get("files", {}) if isinstance(canvas_data, dict) else {}
+        if not isinstance(files, dict) or not files:
+            return message
+
+        updated = False
+        normalized_content: List[Any] = []
+        for item in content:
+            if not isinstance(item, dict) or item.get("type") != "image_url":
+                normalized_content.append(item)
+                continue
+
+            image_url = item.get("image_url", {})
+            url = image_url.get("url", "") if isinstance(image_url, dict) else ""
+            if not isinstance(url, str):
+                normalized_content.append(item)
+                continue
+
+            match = CANVAS_FILE_URL_ID_PATTERN.match(url.strip())
+            if not match:
+                normalized_content.append(item)
+                continue
+
+            file_id = match.group(1)
+            canvas_file = files.get(file_id, {})
+            resolved_url = (
+                canvas_file.get("dataURL", "")
+                if isinstance(canvas_file, dict)
+                else ""
+            )
+            if not isinstance(resolved_url, str) or not resolved_url.strip():
+                normalized_content.append(item)
+                continue
+
+            normalized_content.append({
+                **item,
+                "image_url": {
+                    **image_url,
+                    "url": resolved_url,
+                },
+            })
+            updated = True
+
+        if not updated:
+            return message
+
+        return {
+            **message,
+            "content": normalized_content,
+        }
 
     async def list_sessions(self, canvas_id: str) -> List[Dict[str, Any]]:
         """List all chat sessions"""
@@ -126,14 +208,35 @@ class DatabaseService:
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
+    async def get_chat_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Get a single chat session metadata record"""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = sqlite3.Row
+            cursor = await db.execute("""
+                SELECT id, title, model, provider, canvas_id, created_at, updated_at
+                FROM chat_sessions
+                WHERE id = ?
+            """, (session_id,))
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
     async def save_canvas_data(self, id: str, data: str, thumbnail: str = None):
         """Save canvas data"""
         async with aiosqlite.connect(self.db_path) as db:
-            await db.execute("""
+            cursor = await db.execute("""
                 UPDATE canvases 
                 SET data = ?, thumbnail = ?, updated_at = STRFTIME('%Y-%m-%dT%H:%M:%fZ', 'now')
                 WHERE id = ?
             """, (data, thumbnail, id))
+
+            if cursor.rowcount == 0:
+                print("⚠️ save_canvas_data missing canvas row, creating fallback canvas record", {
+                    "canvas_id": id,
+                })
+                await db.execute("""
+                    INSERT INTO canvases (id, name, data, thumbnail)
+                    VALUES (?, ?, ?, ?)
+                """, (id, "未命名", data, thumbnail))
             await db.commit()
 
     async def get_canvas_data(self, id: str) -> Optional[Dict[str, Any]]:
