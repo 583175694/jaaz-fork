@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Any, Dict, List, Optional, TypedDict
 
 from langchain_openai import ChatOpenAI
@@ -119,6 +120,10 @@ def _normalize_list(value: Any, fallback: List[str]) -> List[str]:
         if normalized:
             return normalized
     return fallback
+
+
+def _contains_meaningful_chinese(text: str) -> bool:
+    return len(re.findall(r"[\u4e00-\u9fff]", str(text or ""))) >= 8
 
 
 def _normalize_brief(data: Dict[str, Any], duration: int, aspect_ratio: str) -> CreativeBrief:
@@ -283,64 +288,64 @@ def _fallback_video_compilation(
 ) -> VideoPromptCompilation:
     if selection_mode == "start_end_frames" and selected_image_count >= 2:
         image_usage_block = (
-            "Use the attached storyboard images as directed frame anchors.\n"
-            "- Reference image 1 is the opening frame target.\n"
-            "- Reference image 2 is the ending frame target.\n"
-            "- Build one continuous advertising shot that bridges naturally from image 1 to image 2.\n"
-            "- Do not treat the two images as unrelated inspiration boards.\n\n"
+            "请把所附分镜图作为明确的画面锚点来使用。\n"
+            "- 参考图 1 是开场画面的目标状态。\n"
+            "- 参考图 2 是结尾画面的目标状态。\n"
+            "- 整条视频必须是在同一广告语境下，从图 1 自然过渡到图 2 的连续镜头。\n"
+            "- 不要把两张图当成彼此无关的灵感拼贴。\n\n"
         )
         narrative_block = (
-            "Narrative structure:\n"
-            "- Opening: begin by matching the visual language, framing logic, and emotional state of reference image 1.\n"
-            "- Development: create one clear commercial action beat that advances the selling impression while preserving scene continuity.\n"
-            "- Resolution: land close to the composition, narrative state, and product clarity of reference image 2.\n\n"
+            "叙事结构：\n"
+            "- 开场：先准确贴合参考图 1 的视觉语言、构图逻辑和情绪状态。\n"
+            "- 发展：在保持场景连续的前提下，设计一个清晰的广告动作节点，强化卖点表达。\n"
+            "- 收束：最终落到接近参考图 2 的构图状态、叙事状态和产品清晰度。\n\n"
         )
         motion_block = (
-            "Motion language:\n"
-            "- The shot must feel like a natural transition from the selected start frame to the selected end frame.\n"
-            "- Keep character identity, wardrobe, hairstyle, makeup, product appearance, environment continuity, prop continuity, and lighting logic stable.\n"
-            "- Preserve one coherent set and one coherent visual world; do not jump to a different room, different set, or unrelated background.\n"
-            "- If the ending frame is tighter or cleaner, treat that as a reframing or progression within the same scene, not a scene cut to a different place.\n"
-            "- Let camera movement, subject action, light, reflections, atmosphere, or product handling provide the transition beat.\n"
-            "- Avoid chaotic movement, identity drift, abrupt scene changes, and unrelated cinematic filler.\n\n"
+            "运动语言：\n"
+            "- 镜头必须让人感到是从起始分镜自然推进到结束分镜，而不是硬切换。\n"
+            "- 人物身份、服装、发型、妆面、产品外观、环境关系、道具关系和光线逻辑都要保持稳定。\n"
+            "- 整体必须是同一个场景、同一个视觉世界，不能突然跳到另一个房间、另一个景别体系或无关背景。\n"
+            "- 如果结束画面更紧、更干净，要理解成同一场景内的推进或重构图，而不是切到别处。\n"
+            "- 让镜头运动、主体动作、光影变化、反射、氛围或产品操作来承担过渡节奏。\n"
+            "- 避免混乱运动、主体漂移、突兀换景和无关的炫技镜头。\n\n"
         )
     else:
         image_usage_block = (
-            "Use the attached storyboard image(s) as continuity anchors for product shape, visual mood, and composition.\n\n"
+            "请把所附分镜图作为产品形态、画面气质和构图连续性的核心锚点。\n\n"
         )
         narrative_block = (
-            "Narrative structure:\n"
-            "- Opening: begin with a clean visual hook and commercially legible composition.\n"
-            "- Development: reveal or reinforce the product through controlled cinematic movement.\n"
-            "- Resolution: end on a strong hero packshot with clear product visibility and marketing-ready framing.\n\n"
+            "叙事结构：\n"
+            "- 开场：用清晰、抓人的视觉钩子和一眼可读的广告构图进入。\n"
+            "- 发展：通过克制而明确的镜头运动去展示或强化产品。\n"
+            "- 收束：以产品清晰可见、适合营销投放的英雄定格画面结束。\n\n"
         )
         motion_block = (
-            "Motion language:\n"
-            "- Keep the product stable and recognizable.\n"
-            "- Let light, atmosphere, reflections, particles, liquid, or environmental accents provide motion.\n"
-            "- Avoid chaotic movement and avoid turning the shot into generic cinematic filler.\n\n"
+            "运动语言：\n"
+            "- 产品始终保持稳定、可辨识。\n"
+            "- 可以用光线、氛围、反射、粒子、液体或环境细节来制造运动感。\n"
+            "- 避免杂乱运动，也不要把镜头做成空泛的电影感填充镜头。\n\n"
         )
 
     final_prompt = (
-        f"Create an {duration}-second premium commercial film in {aspect_ratio}, {resolution}.\n\n"
-        f"Objective: {brief.get('objective')}\n"
-        f"Audience feeling: {brief.get('audience')}\n"
-        f"Single-minded message: {brief.get('single_minded_message')}\n"
-        f"Tone: {brief.get('tone')}\n"
+        f"生成一条 {duration} 秒、{aspect_ratio} 比例、{resolution} 分辨率的高质感商业广告视频。\n\n"
+        f"目标：{brief.get('objective')}\n"
+        f"受众感受：{brief.get('audience')}\n"
+        f"核心表达：{brief.get('single_minded_message')}\n"
+        f"整体调性：{brief.get('tone')}\n"
         f"{image_usage_block}"
         f"{narrative_block}"
-        "Camera language:\n"
-        "- Use slow, intentional premium advertising camera movement.\n"
-        "- Preserve strong focal hierarchy and product visibility.\n\n"
+        "镜头语言：\n"
+        "- 使用缓慢、明确、具有高级广告感的镜头运动。\n"
+        "- 始终保持清晰的主体层级和产品可见度。\n\n"
         f"{motion_block}"
-        "Commercial rules:\n"
-        "- Product remains the visual hero.\n"
-        "- Keep the same scene identity from opening to ending unless the prompt explicitly demands a scene change.\n"
-        "- Final frame must function as a clean hero packshot.\n"
-        "- Maintain premium commercial pacing.\n"
-        "- No warped product shape, no messy ending, no off-tone props.\n\n"
-        f"Original request context:\n{original_prompt}\n"
-        f"Reference image count: {selected_image_count}"
+        "商业规则：\n"
+        "- 产品始终是视觉主角。\n"
+        "- 除非需求明确要求换景，否则从开场到结尾都保持同一场景身份。\n"
+        "- 最终画面必须是干净、明确、可投放的英雄产品定格。\n"
+        "- 节奏保持高级、克制、具备广告片感。\n"
+        "- 不要出现产品变形、杂乱收尾或气质不符的道具。\n\n"
+        f"原始需求上下文：\n{original_prompt}\n"
+        f"参考图数量：{selected_image_count}"
     )
     return {
         "opening_frame_role": "opening_hook",
@@ -403,6 +408,7 @@ Rules:
 - If selection_mode is start_end_frames and there are two images, treat image 1 as the opening frame target and image 2 as the ending frame target.
 - The final_prompt must explicitly include opening, development, and hero resolution.
 - The final_prompt must end with a strong hero packshot requirement.
+- The final_prompt must be written directly in Simplified Chinese. Keep the whole prompt in Chinese except unavoidable brand names or model names.
 - Preserve the user's product/brand context without inventing asset details.
 - Keep the product recognizable and visually dominant.
 
@@ -447,12 +453,56 @@ Runtime constraints:
             ),
             "final_prompt": str(parsed.get("final_prompt") or compiled["final_prompt"]),
         })
+        compiled["final_prompt"] = await _ensure_video_prompt_in_simplified_chinese(
+            text_model=text_model,
+            final_prompt=str(compiled.get("final_prompt") or ""),
+            duration=duration,
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
+        )
         return compiled
     except Exception as exc:
         print("⚠️ Video prompt compilation failed, using fallback", {"error": str(exc)})
         return _fallback_video_compilation(
             brief, original_prompt, duration, aspect_ratio, resolution, selected_image_count, selection_mode
         )
+
+
+async def _ensure_video_prompt_in_simplified_chinese(
+    text_model: ModelInfo,
+    final_prompt: str,
+    duration: int,
+    aspect_ratio: str,
+    resolution: str,
+) -> str:
+    normalized = str(final_prompt or "").strip()
+    if not normalized or _contains_meaningful_chinese(normalized):
+        return normalized
+
+    translation_prompt = f"""
+你是一个商业视频提示词本地化编辑。请把下面这段视频生成提示词完整改写成简体中文，直接输出改写后的中文提示词正文，不要输出解释，不要加引号，不要输出 JSON。
+
+要求：
+- 保留原始提示词的结构和约束强度。
+- 保留开场、发展、收束、英雄定格等叙事结构。
+- 保留广告片语气、镜头语言、连续性要求、产品主导性要求。
+- 品牌名、产品名、模型名等必须保留时可以不翻译，其余内容全部改成自然、专业、可直接用于生成的简体中文。
+- 输出必须是单段可直接使用的视频提示词。
+- 当前运行约束：{duration} 秒，{aspect_ratio}，{resolution}。
+
+原始提示词：
+{normalized}
+"""
+    try:
+        llm = _create_text_model(text_model)
+        response = await llm.ainvoke([{"role": "user", "content": translation_prompt}])
+        translated = _extract_text(response).strip()
+        if translated and _contains_meaningful_chinese(translated):
+            return translated
+    except Exception as exc:
+        print("⚠️ Video prompt Chinese normalization failed, keeping original", {"error": str(exc)})
+
+    return normalized
 
 
 def evaluate_image_prompt(prompt: str) -> List[str]:
@@ -505,10 +555,10 @@ def rewrite_video_prompt(compilation: VideoPromptCompilation, issues: List[str])
     rewritten = dict(compilation)
     rewritten["final_prompt"] = (
         str(compilation.get("final_prompt") or "")
-        + "\n\nAdditional advertising enforcement:\n"
-        + "- Strengthen opening visual hook.\n"
-        + "- Keep the product dominant and recognizable throughout the motion.\n"
-        + "- Increase selling-point emphasis in the middle beat.\n"
-        + "- End with a clean, marketing-ready hero packshot with strong focal hierarchy.\n"
+        + "\n\n补充广告约束：\n"
+        + "- 强化开场的视觉抓力。\n"
+        + "- 在整个运动过程中保持产品主导性和可辨识度。\n"
+        + "- 在中段进一步强化卖点表达。\n"
+        + "- 结尾必须落到干净、可投放、主体明确的英雄产品定格画面。\n"
     )
     return rewritten

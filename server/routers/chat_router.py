@@ -7,7 +7,7 @@ from services.direct_storyboard_service import (
     handle_direct_storyboard_refine,
     set_storyboard_primary_variant,
 )
-from services.direct_video_service import handle_direct_video
+from services.direct_video_service import handle_direct_video, preview_direct_video_prompt
 from services.magic_service import handle_magic
 from services.stream_service import get_stream_task
 from typing import Dict
@@ -76,6 +76,13 @@ async def direct_video(request: Request):
     data = await request.json()
     await handle_direct_video(data)
     return {"status": "done"}
+
+
+@router.post("/direct_video/prompt_preview")
+async def direct_video_prompt_preview(request: Request):
+    data = await request.json()
+    result = await preview_direct_video_prompt(data)
+    return {"status": "done", "result": result}
 
 
 @router.post("/direct_storyboard")

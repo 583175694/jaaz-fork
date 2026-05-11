@@ -86,6 +86,111 @@ def _normalize_frame_file_id(data: Dict[str, Any], key: str) -> str:
     return str(data.get(key, "") or "").strip()
 
 
+def _normalize_skip_prompt_confirmation(data: Dict[str, Any]) -> bool:
+    return bool(data.get("skip_prompt_confirmation", False))
+
+
+def _resolve_ordered_reference_file_ids(
+    file_ids: List[str],
+    selection_mode: str,
+    start_frame_file_id: str,
+    end_frame_file_id: str,
+) -> List[str]:
+    normalized_file_ids = [str(file_id or "").strip() for file_id in file_ids if str(file_id or "").strip()]
+    if selection_mode != "start_end_frames":
+        return normalized_file_ids[:APIPOD_VIDEO_REFERENCE_IMAGES_MAX]
+
+    ordered_candidates = [
+        str(start_frame_file_id or "").strip(),
+        str(end_frame_file_id or "").strip(),
+    ]
+    ordered: List[str] = []
+    for candidate in ordered_candidates:
+        if candidate and candidate not in ordered:
+            ordered.append(candidate)
+
+    if not ordered and normalized_file_ids:
+        ordered.append(normalized_file_ids[0])
+    if len(ordered) < 2 and len(normalized_file_ids) > 1:
+        tail_candidate = normalized_file_ids[-1]
+        if tail_candidate and tail_candidate not in ordered:
+            ordered.append(tail_candidate)
+
+    return ordered[:APIPOD_VIDEO_REFERENCE_IMAGES_MAX]
+
+
+async def _compile_direct_video_prompt(
+    *,
+    session_id: str,
+    canvas_id: str,
+    prompt: str,
+    messages: List[Dict[str, Any]],
+    file_ids: List[str],
+    selection_mode: str,
+    start_frame_file_id: str,
+    end_frame_file_id: str,
+    duration: int,
+    aspect_ratio: str,
+    resolution: str,
+    text_model: Optional[ModelInfo],
+) -> Dict[str, Any]:
+    selection = await _resolve_storyboard_video_selection(
+        canvas_id=canvas_id,
+        file_ids=file_ids,
+        start_frame_file_id=start_frame_file_id,
+        end_frame_file_id=end_frame_file_id,
+    )
+    file_ids = selection["file_ids"]
+    start_frame_file_id = selection["start_frame_file_id"]
+    end_frame_file_id = selection["end_frame_file_id"]
+    reference_file_ids = _resolve_ordered_reference_file_ids(
+        file_ids=file_ids,
+        selection_mode=selection_mode,
+        start_frame_file_id=start_frame_file_id,
+        end_frame_file_id=end_frame_file_id,
+    )
+    storyboard_id = str(selection.get("storyboard_id", "") or "")
+    continuity_ids = selection.get("continuity_ids", set())
+    continuity_versions = selection.get("continuity_versions", set())
+
+    if len(continuity_ids) > 1 or len(continuity_versions) > 1:
+        raise RuntimeError(
+            "当前选中的分镜主版本存在多个 continuity 版本，暂不能直接生成视频。请先统一分镜版本。"
+        )
+
+    model_name = get_apipod_video_model_name()
+    if len(file_ids) > 1 and not apipod_video_supports_multi_reference_images(model_name):
+        raise RuntimeError(
+            format_apipod_multi_reference_images_not_supported_error(model_name)
+        )
+
+    compiled = await compile_ad_video_prompt(
+        session_id=session_id,
+        prompt=prompt,
+        messages=messages,
+        duration=duration,
+        aspect_ratio=aspect_ratio,
+        resolution=resolution,
+        selected_image_count=len(reference_file_ids),
+        platform_hint="canvas selected storyboard to video",
+        canvas_id=canvas_id,
+        selection_mode=selection_mode,
+        start_frame_file_id=start_frame_file_id,
+        end_frame_file_id=end_frame_file_id,
+        text_model=text_model,
+    )
+    compiled_video_prompt = str(compiled["video_prompt"] or prompt).strip()
+    return {
+        "selection": selection,
+        "reference_file_ids": reference_file_ids,
+        "storyboard_id": storyboard_id,
+        "compiled": compiled,
+        "compiled_video_prompt": compiled_video_prompt,
+        "start_frame_file_id": start_frame_file_id,
+        "end_frame_file_id": end_frame_file_id,
+    }
+
+
 async def _resolve_storyboard_video_selection(
     canvas_id: str,
     file_ids: List[str],
@@ -207,6 +312,7 @@ async def handle_direct_video(data: Dict[str, Any]) -> None:
     duration: int = int(data.get("duration", 6) or 6)
     aspect_ratio: str = str(data.get("aspect_ratio", "16:9") or "16:9")
     resolution: str = str(data.get("resolution", "1080p") or "1080p")
+    skip_prompt_confirmation = _normalize_skip_prompt_confirmation(data)
     model_name = get_apipod_video_model_name()
     print(
         "🎬 direct_video request",
@@ -290,6 +396,7 @@ async def handle_direct_video(data: Dict[str, Any]) -> None:
             aspect_ratio=aspect_ratio,
             resolution=resolution,
             text_model=text_model,
+            skip_prompt_confirmation=skip_prompt_confirmation,
         )
     )
     print(
@@ -317,6 +424,55 @@ async def handle_direct_video(data: Dict[str, Any]) -> None:
         await send_to_websocket(session_id, {"type": "done"})
 
 
+async def preview_direct_video_prompt(data: Dict[str, Any]) -> Dict[str, Any]:
+    session_id: str = str(data.get("session_id", "") or "")
+    canvas_id: str = str(data.get("canvas_id", "") or "")
+    if not canvas_id:
+        raise RuntimeError("canvas_id is required")
+
+    text_model = _normalize_text_model(data)
+    prompt: str = str(data.get("prompt", "") or "")
+    file_ids = _normalize_file_ids(data)
+    selection_mode = _normalize_selection_mode(data)
+    start_frame_file_id = _normalize_frame_file_id(data, "start_frame_file_id")
+    end_frame_file_id = _normalize_frame_file_id(data, "end_frame_file_id")
+    duration: int = int(data.get("duration", 6) or 6)
+    aspect_ratio: str = str(data.get("aspect_ratio", "16:9") or "16:9")
+    resolution: str = str(data.get("resolution", "1080p") or "1080p")
+
+    if not file_ids:
+        raise RuntimeError("请至少选择一张分镜图")
+
+    result = await _compile_direct_video_prompt(
+        session_id=session_id,
+        canvas_id=canvas_id,
+        prompt=prompt,
+        messages=[],
+        file_ids=file_ids,
+        selection_mode=selection_mode,
+        start_frame_file_id=start_frame_file_id,
+        end_frame_file_id=end_frame_file_id,
+        duration=duration,
+        aspect_ratio=aspect_ratio,
+        resolution=resolution,
+        text_model=text_model,
+    )
+
+    compiled = result["compiled"]
+    return {
+        "prompt": result["compiled_video_prompt"],
+        "brief": compiled.get("brief", {}),
+        "qa_issues": compiled.get("qa_issues", []),
+        "reference_file_ids": result["reference_file_ids"],
+        "start_frame_file_id": result["start_frame_file_id"],
+        "end_frame_file_id": result["end_frame_file_id"],
+        "selection_context": compiled.get("selection_context", {}),
+        "selected_frame_storyboard_meta": compiled.get(
+            "selected_frame_storyboard_meta", {}
+        ),
+    }
+
+
 async def _process_direct_video_generation(
     messages: List[Dict[str, Any]],
     session_id: str,
@@ -330,6 +486,7 @@ async def _process_direct_video_generation(
     aspect_ratio: str,
     resolution: str,
     text_model: Optional[ModelInfo],
+    skip_prompt_confirmation: bool,
 ) -> None:
     ai_response = await create_direct_video_response(
         session_id=session_id,
@@ -344,6 +501,7 @@ async def _process_direct_video_generation(
         aspect_ratio=aspect_ratio,
         resolution=resolution,
         text_model=text_model,
+        skip_prompt_confirmation=skip_prompt_confirmation,
     )
 
     await db_service.create_message(session_id, "assistant", json.dumps(ai_response))
@@ -366,43 +524,31 @@ async def create_direct_video_response(
     aspect_ratio: str,
     resolution: str,
     text_model: Optional[ModelInfo],
+    skip_prompt_confirmation: bool,
 ) -> Dict[str, Any]:
     try:
-        selection = await _resolve_storyboard_video_selection(
-            canvas_id=canvas_id,
-            file_ids=file_ids,
-            start_frame_file_id=start_frame_file_id,
-            end_frame_file_id=end_frame_file_id,
-        )
-        file_ids = selection["file_ids"]
-        start_frame_file_id = selection["start_frame_file_id"]
-        end_frame_file_id = selection["end_frame_file_id"]
-        storyboard_id = str(selection.get("storyboard_id", "") or "")
-        continuity_ids = selection.get("continuity_ids", set())
-        continuity_versions = selection.get("continuity_versions", set())
-
-        if len(continuity_ids) > 1 or len(continuity_versions) > 1:
-            raise RuntimeError("当前选中的分镜主版本存在多个 continuity 版本，暂不能直接生成视频。请先统一分镜版本。")
-
-        model_name = get_apipod_video_model_name()
-        if len(file_ids) > 1 and not apipod_video_supports_multi_reference_images(model_name):
-            raise RuntimeError(format_apipod_multi_reference_images_not_supported_error(model_name))
-
-        compiled = await compile_ad_video_prompt(
+        compile_result = await _compile_direct_video_prompt(
             session_id=session_id,
+            canvas_id=canvas_id,
             prompt=prompt,
             messages=messages,
-            duration=duration,
-            aspect_ratio=aspect_ratio,
-            resolution=resolution,
-            selected_image_count=len(file_ids),
-            platform_hint="canvas selected storyboard to video",
-            canvas_id=canvas_id,
+            file_ids=file_ids,
             selection_mode=selection_mode,
             start_frame_file_id=start_frame_file_id,
             end_frame_file_id=end_frame_file_id,
+            duration=duration,
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
             text_model=text_model,
         )
+        selection = compile_result["selection"]
+        reference_file_ids = compile_result["reference_file_ids"]
+        storyboard_id = compile_result["storyboard_id"]
+        compiled = compile_result["compiled"]
+        compiled_video_prompt = compile_result["compiled_video_prompt"]
+        start_frame_file_id = compile_result["start_frame_file_id"]
+        end_frame_file_id = compile_result["end_frame_file_id"]
+        model_name = get_apipod_video_model_name()
         brief = compiled["brief"]
         print(
             "🎬 direct_video compiled brief",
@@ -414,15 +560,15 @@ async def create_direct_video_response(
                 "product_priority": brief.get("product_priority"),
             },
         )
-        compiled_video_prompt = str(compiled["video_prompt"] or prompt)
         print(
             "🎬 direct_video compiled prompt",
             {
                 "session_id": session_id,
-                "selected_image_count": len(file_ids),
+                "selected_image_count": len(reference_file_ids),
                 "selection_mode": selection_mode,
                 "start_frame_file_id": start_frame_file_id,
                 "end_frame_file_id": end_frame_file_id,
+                "reference_file_ids": reference_file_ids,
                 "selected_frame_metadata_roles": list(
                     (compiled.get("selected_frame_generation_meta") or {}).keys()
                 ),
@@ -459,7 +605,7 @@ async def create_direct_video_response(
 
         confirmation_payload = _build_video_prompt_confirmation_payload(
             compiled=compiled,
-            selected_image_count=len(file_ids),
+            selected_image_count=len(reference_file_ids),
             duration=duration,
             aspect_ratio=aspect_ratio,
             resolution=resolution,
@@ -467,36 +613,38 @@ async def create_direct_video_response(
             selected_storyboard_variants=selected_storyboard_variants,
         )
 
-        confirmation_status = await request_prompt_bundle_confirmation(
-            session_id=session_id,
-            tool_name="generate_video_from_storyboard",
-            payload=confirmation_payload,
-        )
-        if confirmation_status == "revise":
-            return {
-                "role": "assistant",
-                "content": "已返回修改，请调整分镜选择或视频参数后重新提交。",
-            }
-        if confirmation_status != "confirmed":
-            return {
-                "role": "assistant",
-                "content": "已取消视频生成。",
-            }
+        if not skip_prompt_confirmation:
+            confirmation_status = await request_prompt_bundle_confirmation(
+                session_id=session_id,
+                tool_name="generate_video_from_storyboard",
+                payload=confirmation_payload,
+            )
+            if confirmation_status == "revise":
+                return {
+                    "role": "assistant",
+                    "content": "已返回修改，请调整分镜选择或视频参数后重新提交。",
+                }
+            if confirmation_status != "confirmed":
+                return {
+                    "role": "assistant",
+                    "content": "已取消视频生成。",
+                }
 
         video_brief["status"] = "confirmed"
         await upsert_video_brief(canvas_id, video_brief)
 
         input_images = []
-        for file_id in file_ids[:APIPOD_VIDEO_REFERENCE_IMAGES_MAX]:
+        for file_id in reference_file_ids:
             processed_image = await process_input_image(file_id, canvas_id=canvas_id)
             if processed_image:
                 input_images.append(processed_image)
         print(
             "🎬 direct_video processed inputs",
             {
-                "requested_file_count": len(file_ids),
+                "requested_file_count": len(reference_file_ids),
                 "accepted_file_count": len(input_images),
                 "max_reference_images": APIPOD_VIDEO_REFERENCE_IMAGES_MAX,
+                "reference_file_ids": reference_file_ids,
             },
         )
 
@@ -517,7 +665,7 @@ async def create_direct_video_response(
                 }
             },
             input_images=normalized_input_images,
-            source_file_ids=file_ids,
+            source_file_ids=reference_file_ids,
             camera_fixed=True,
             provider_hint="apipodvideo",
         )
