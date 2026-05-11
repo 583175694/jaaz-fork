@@ -3,6 +3,7 @@ import mitt from 'mitt'
 
 export type TCanvasAddImagesToChatEvent = {
   fileId: string
+  canvasFileId?: string
   base64?: string
   width: number
   height: number
@@ -31,6 +32,28 @@ export type TCanvasGenerateVideoEvent = {
   aspectRatio: string
   resolution: string
   selectionMode?: 'start_end_frames'
+}
+
+export type TCanvasGenerateStoryboardEvent = {
+  selectedImage: TCanvasAddImagesToChatEvent[number]
+  mainImageFileId?: string
+  prompt: string
+  shotCount: number
+  variantCountPerShot: number
+  aspectRatio: string
+}
+
+export type TCanvasGenerateMultiviewEvent = {
+  selectedImage: TCanvasAddImagesToChatEvent[number]
+  prompt: string
+  presetName: string
+  azimuth: number
+  elevation: number
+  framing: 'close' | 'medium' | 'full' | 'wide'
+  aspectRatio: string
+  previewOnly?: boolean
+  replaceSource?: boolean
+  mode?: 'multiview' | 'refinement'
 }
 
 export type TMaterialAddImagesToChatEvent = {
@@ -63,6 +86,8 @@ export type TEvents = {
   'Canvas::AddImagesToChat': TCanvasAddImagesToChatEvent
   'Canvas::MagicGenerate': TCanvasMagicGenerateEvent
   'Canvas::GenerateVideo': TCanvasGenerateVideoEvent
+  'Canvas::GenerateStoryboard': TCanvasGenerateStoryboardEvent
+  'Canvas::GenerateMultiview': TCanvasGenerateMultiviewEvent
   // ********** Canvas events - End **********
 
   // ********** Material events - Start **********

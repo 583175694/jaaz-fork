@@ -1,8 +1,16 @@
 import { sendMessages } from '@/api/chat'
+import {
+  getCurrentContinuity,
+  getCurrentStoryboardPlan,
+  getCurrentVideoBrief,
+  getPendingWorkflowConfirmations,
+} from '@/api/canvas'
 import Blur from '@/components/common/Blur'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { eventBus, TEvents } from '@/lib/event'
 import ChatMagicGenerator from './ChatMagicGenerator'
+import ChatCanvasMultiviewGenerator from './ChatCanvasMultiviewGenerator'
+import ChatCanvasStoryboardGenerator from './ChatCanvasStoryboardGenerator'
 import ChatCanvasVideoGenerator from './ChatCanvasVideoGenerator'
 import {
   AssistantMessage,
@@ -10,6 +18,7 @@ import {
   Model,
   PendingType,
   Session,
+  ToolCallFunctionName,
 } from '@/types/types'
 import { useSearch } from '@tanstack/react-router'
 import { produce } from 'immer'
@@ -37,6 +46,7 @@ import ToolcallProgressUpdate from './ToolcallProgressUpdate'
 import ShareTemplateDialog from './ShareTemplateDialog'
 
 import { useConfigs } from '@/contexts/configs'
+import { useCanvas } from '@/contexts/canvas'
 import 'react-photo-view/dist/react-photo-view.css'
 import { DEFAULT_SYSTEM_PROMPT } from '@/constants'
 import { ModelInfo, ToolInfo } from '@/api/model'
@@ -66,6 +76,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const { authStatus } = useAuth()
   const [showShareDialog, setShowShareDialog] = useState(false)
   const queryClient = useQueryClient()
+  const { setCurrentContinuity, setCurrentVideoBrief, setStoryboardPlan } =
+    useCanvas()
 
   useEffect(() => {
     if (sessionList.length > 0) {
@@ -110,6 +122,48 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     }, 200)
   }, [])
 
+  const submitToolConfirmation = useCallback(
+    async (
+      toolCallId: string,
+      action: 'confirm' | 'cancel' | 'revise'
+    ) => {
+      try {
+        const response = await fetch('/api/tool_confirmation', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            session_id: sessionId,
+            tool_call_id: toolCallId,
+            action,
+            confirmed: action === 'confirm',
+          }),
+        })
+
+        if (!response.ok) {
+          throw new Error(`Tool confirmation failed: ${response.status}`)
+        }
+
+        if (action !== 'confirm') {
+          setPendingToolConfirmations((prev) =>
+            prev.filter((id) => id !== toolCallId)
+          )
+        }
+      } catch (error) {
+        console.error('Failed to submit tool confirmation', {
+          toolCallId,
+          action,
+          error,
+        })
+        toast.error('提交确认失败', {
+          description: String(error),
+        })
+      }
+    },
+    [sessionId]
+  )
+
   const mergeToolCallResult = (messages: Message[]) => {
     const messagesWithToolCallResult = messages.map((message, index) => {
       if (message.role === 'assistant' && message.tool_calls) {
@@ -132,6 +186,103 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
     return messagesWithToolCallResult
   }
+
+  const upsertAssistantToolCallMessage = useCallback(
+    (
+      draft: Message[],
+      payload: {
+        id: string
+        name: ToolCallFunctionName
+        argumentsText: string
+      }
+    ) => {
+      for (const message of draft) {
+        if (message.role !== 'assistant' || !message.tool_calls) {
+          continue
+        }
+
+        const existingToolCall = message.tool_calls.find(
+          (toolCall) => toolCall.id === payload.id
+        )
+        if (!existingToolCall) {
+          continue
+        }
+
+        existingToolCall.function.name = payload.name as typeof existingToolCall.function.name
+        if (payload.argumentsText) {
+          existingToolCall.function.arguments = payload.argumentsText
+        }
+        return
+      }
+
+      draft.push({
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          {
+            type: 'function',
+            function: {
+              name: payload.name,
+              arguments: payload.argumentsText,
+            },
+            id: payload.id,
+          },
+        ],
+      })
+    },
+    []
+  )
+
+  const mergePendingToolCallsIntoMessages = useCallback(
+    (nextMessages: Message[], currentMessages: Message[]) => {
+      const merged = [...nextMessages]
+      const seenToolCallIds = new Set<string>()
+
+      for (const message of merged) {
+        if (message.role !== 'assistant' || !message.tool_calls) {
+          continue
+        }
+        for (const toolCall of message.tool_calls) {
+          seenToolCallIds.add(toolCall.id)
+        }
+      }
+
+      for (const message of currentMessages) {
+        if (message.role !== 'assistant' || !message.tool_calls) {
+          continue
+        }
+
+        const pendingToolCalls = message.tool_calls.filter((toolCall) => {
+          return (
+            pendingToolConfirmations.includes(toolCall.id) &&
+            !seenToolCallIds.has(toolCall.id)
+          )
+        })
+
+        if (pendingToolCalls.length === 0) {
+          continue
+        }
+
+        merged.push({
+          role: 'assistant',
+          content: message.content ?? '',
+          tool_calls: pendingToolCalls.map((toolCall) => ({
+            ...toolCall,
+            function: {
+              ...toolCall.function,
+            },
+          })),
+        })
+
+        for (const toolCall of pendingToolCalls) {
+          seenToolCallIds.add(toolCall.id)
+        }
+      }
+
+      return merged
+    },
+    [pendingToolConfirmations]
+  )
 
   const handleDelta = useCallback(
     (data: TEvents['Socket::Session::Delta']) => {
@@ -176,45 +327,27 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
         return
       }
 
-      const existToolCall = messages.find(
-        (m) =>
-          m.role === 'assistant' &&
-          m.tool_calls &&
-          m.tool_calls.find((t) => t.id == data.id)
-      )
-
-      if (existToolCall) {
-        return
-      }
-
       setMessages(
         produce((prev) => {
           console.log('👇tool_call event get', data)
           setPending('tool')
-          prev.push({
-            role: 'assistant',
-            content: '',
-            tool_calls: [
-              {
-                type: 'function',
-                function: {
-                  name: data.name,
-                  arguments: '',
-                },
-                id: data.id,
-              },
-            ],
+          upsertAssistantToolCallMessage(prev, {
+            id: data.id,
+            name: data.name,
+            argumentsText: '',
           })
         })
       )
 
       setExpandingToolCalls(
         produce((prev) => {
-          prev.push(data.id)
+          if (!prev.includes(data.id)) {
+            prev.push(data.id)
+          }
         })
       )
     },
-    [sessionId]
+    [sessionId, upsertAssistantToolCallMessage]
   )
 
   const handleToolCallPendingConfirmation = useCallback(
@@ -223,41 +356,23 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
         return
       }
 
-      const existToolCall = messages.find(
-        (m) =>
-          m.role === 'assistant' &&
-          m.tool_calls &&
-          m.tool_calls.find((t) => t.id == data.id)
-      )
-
-      if (existToolCall) {
-        return
-      }
-
       setMessages(
         produce((prev) => {
           console.log('👇tool_call_pending_confirmation event get', data)
           setPending('tool')
-          prev.push({
-            role: 'assistant',
-            content: '',
-            tool_calls: [
-              {
-                type: 'function',
-                function: {
-                  name: data.name,
-                  arguments: data.arguments,
-                },
-                id: data.id,
-              },
-            ],
+          upsertAssistantToolCallMessage(prev, {
+            id: data.id,
+            name: data.name,
+            argumentsText: data.arguments,
           })
         })
       )
 
       setPendingToolConfirmations(
         produce((prev) => {
-          prev.push(data.id)
+          if (!prev.includes(data.id)) {
+            prev.push(data.id)
+          }
         })
       )
 
@@ -270,8 +385,40 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
         })
       )
     },
-    [sessionId]
+    [sessionId, upsertAssistantToolCallMessage]
   )
+
+  const syncPendingToolConfirmations = useCallback(async () => {
+    if (!sessionId) {
+      return
+    }
+
+    try {
+      const data = await getPendingWorkflowConfirmations(sessionId)
+      const items = Array.isArray(data?.items) ? data.items : []
+
+      items.forEach((item) => {
+        const normalized = {
+          session_id: String(item.session_id || sessionId),
+          type: 'tool_call_pending_confirmation' as TEvents['Socket::Session::ToolCallPendingConfirmation']['type'],
+          id: String(item.tool_call_id || ''),
+          name: String(item.tool_name || '') as ToolCallFunctionName,
+          arguments: JSON.stringify(item.arguments || {}),
+        }
+
+        if (!normalized.id || !normalized.name) {
+          return
+        }
+
+        handleToolCallPendingConfirmation(normalized)
+      })
+    } catch (error) {
+      console.warn('Failed to sync pending tool confirmations', {
+        sessionId,
+        error,
+      })
+    }
+  }, [handleToolCallPendingConfirmation, sessionId])
 
   const handleToolCallConfirmed = useCallback(
     (data: TEvents['Socket::Session::ToolCallConfirmed']) => {
@@ -315,8 +462,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
             if (msg.role === 'assistant' && msg.tool_calls) {
               msg.tool_calls.forEach((tc) => {
                 if (tc.id === data.id) {
-                  // 添加取消状态标记
-                  tc.result = '工具调用已取消'
+                  if (data.reason === 'revise') {
+                    tc.result = '已返回修改'
+                  } else if (data.reason === 'timeout') {
+                    tc.result = '确认已超时'
+                  } else {
+                    tc.result = '工具调用已取消'
+                  }
                 }
               })
             }
@@ -410,14 +562,23 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
         return
       }
 
-      setMessages(() => {
+      setMessages((prev) => {
         console.log('👇all_messages', data.messages)
-        return data.messages
+        const mergedMessages = mergePendingToolCallsIntoMessages(
+          data.messages,
+          prev
+        )
+        return mergeToolCallResult(mergedMessages)
       })
-      setMessages(mergeToolCallResult(data.messages))
+      syncPendingToolConfirmations()
       scrollToBottom()
     },
-    [sessionId, scrollToBottom]
+    [
+      sessionId,
+      scrollToBottom,
+      syncPendingToolConfirmations,
+      mergePendingToolCallsIntoMessages,
+    ]
   )
 
   const handleDone = useCallback(
@@ -547,16 +708,56 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     const msgs = data?.length ? data : []
 
     setMessages(mergeToolCallResult(msgs))
+    await syncPendingToolConfirmations()
+    try {
+      const [continuityResp, storyboardResp, videoBriefResp] = await Promise.all([
+        getCurrentContinuity(canvasId),
+        getCurrentStoryboardPlan(canvasId),
+        getCurrentVideoBrief(canvasId),
+      ])
+      setCurrentContinuity(continuityResp?.item || null)
+      setStoryboardPlan(storyboardResp?.item || null)
+      setCurrentVideoBrief(videoBriefResp?.item || null)
+    } catch (error) {
+      console.warn('Failed to sync workflow state during chat init', {
+        canvasId,
+        sessionId,
+        error,
+      })
+    }
     if (msgs.length > 0) {
       setInitCanvas(false)
     }
 
     scrollToBottom()
-  }, [sessionId, scrollToBottom, setInitCanvas])
+  }, [
+    canvasId,
+    sessionId,
+    scrollToBottom,
+    setCurrentContinuity,
+    setStoryboardPlan,
+    setCurrentVideoBrief,
+    setInitCanvas,
+    syncPendingToolConfirmations,
+  ])
 
   useEffect(() => {
     initChat()
   }, [sessionId, initChat])
+
+  useEffect(() => {
+    if (!sessionId) {
+      return
+    }
+
+    const timer = window.setInterval(() => {
+      void syncPendingToolConfirmations()
+    }, 1500)
+
+    return () => {
+      window.clearInterval(timer)
+    }
+  }, [sessionId, syncPendingToolConfirmations])
 
   const onSelectSession = (sessionId: string) => {
     setSession(sessionList.find((s) => s.id === sessionId) || null)
@@ -715,32 +916,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                             toolCall.id
                           )}
                           onConfirm={() => {
-                            // 发送确认事件到后端
-                            fetch('/api/tool_confirmation', {
-                              method: 'POST',
-                              headers: {
-                                'Content-Type': 'application/json',
-                              },
-                              body: JSON.stringify({
-                                session_id: sessionId,
-                                tool_call_id: toolCall.id,
-                                confirmed: true,
-                              }),
-                            })
+                            void submitToolConfirmation(toolCall.id, 'confirm')
                           }}
                           onCancel={() => {
-                            // 发送取消事件到后端
-                            fetch('/api/tool_confirmation', {
-                              method: 'POST',
-                              headers: {
-                                'Content-Type': 'application/json',
-                              },
-                              body: JSON.stringify({
-                                session_id: sessionId,
-                                tool_call_id: toolCall.id,
-                                confirmed: false,
-                              }),
-                            })
+                            void submitToolConfirmation(toolCall.id, 'cancel')
+                          }}
+                          onRevise={() => {
+                            void submitToolConfirmation(toolCall.id, 'revise')
                           }}
                         />
                       )
@@ -793,6 +975,22 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
             scrollToBottom={scrollToBottom}
           />
           <ChatCanvasVideoGenerator
+            sessionId={sessionId || ''}
+            canvasId={canvasId}
+            messages={messages}
+            setMessages={setMessages}
+            setPending={setPending}
+            scrollToBottom={scrollToBottom}
+          />
+          <ChatCanvasStoryboardGenerator
+            sessionId={sessionId || ''}
+            canvasId={canvasId}
+            messages={messages}
+            setMessages={setMessages}
+            setPending={setPending}
+            scrollToBottom={scrollToBottom}
+          />
+          <ChatCanvasMultiviewGenerator
             sessionId={sessionId || ''}
             canvasId={canvasId}
             messages={messages}

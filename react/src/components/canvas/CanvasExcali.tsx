@@ -34,6 +34,26 @@ type LastImagePosition = {
   col: number // col index
 }
 
+type StoryboardDecoration = {
+  storyboardId: string
+  shotId: string
+  variantId: string
+  narrativeRole: string
+  isPrimaryVariant: boolean
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+const STORYBOARD_ROLE_LABELS: Record<string, string> = {
+  establishing: '建立镜头',
+  progression: '推进镜头',
+  reaction: '反应镜头',
+  closure: '收束镜头',
+  visual_mother_frame: '视觉母版',
+}
+
 type CanvasExcaliProps = {
   canvasId: string
   initialData?: ExcalidrawInitialDataState
@@ -117,6 +137,286 @@ const buildSceneSyncSignature = (
   })
 }
 
+const isStoryboardDecorationElement = (element: { customData?: any }) => {
+  return Boolean(element?.customData?.storyboardDecoration)
+}
+
+const buildStoryboardDecorations = (
+  data?: ExcalidrawInitialDataState,
+  mainImageFileId?: string
+): OrderedExcalidrawElement[] => {
+  if (!data?.elements?.length || !data?.files) {
+    return []
+  }
+
+  const files = data.files as Record<string, BinaryFileData>
+  const imageElements = (data.elements as OrderedExcalidrawElement[]).filter(
+    (element) => element.type === 'image'
+  ) as ExcalidrawImageElement[]
+  const imageByFileId = new Map<string, ExcalidrawImageElement>()
+  for (const element of imageElements) {
+    if (element.fileId) {
+      imageByFileId.set(element.fileId, element)
+    }
+  }
+
+  const groups = new Map<string, StoryboardDecoration[]>()
+  for (const [fileId, file] of Object.entries(files)) {
+    const storyboardMeta = (file as { storyboardMeta?: Record<string, unknown> })
+      ?.storyboardMeta
+    if (!storyboardMeta || typeof storyboardMeta !== 'object') {
+      continue
+    }
+
+    const shotId = String(storyboardMeta.shot_id || '').trim()
+    const storyboardId = String(storyboardMeta.storyboard_id || '').trim()
+    const variantId = String(storyboardMeta.variant_id || '').trim()
+    if (!shotId || !storyboardId || !variantId) {
+      continue
+    }
+
+    const image = imageByFileId.get(fileId)
+    if (!image) {
+      continue
+    }
+
+    const groupKey = `${storyboardId}:${shotId}`
+    if (!groups.has(groupKey)) {
+      groups.set(groupKey, [])
+    }
+
+    groups.get(groupKey)!.push({
+      storyboardId,
+      shotId,
+      variantId,
+      narrativeRole: String(storyboardMeta.narrative_role || '').trim(),
+      isPrimaryVariant: Boolean(storyboardMeta.is_primary_variant),
+      x: image.x,
+      y: image.y,
+      width: image.width,
+      height: image.height,
+    })
+  }
+
+  if (mainImageFileId) {
+    const mainImage = imageByFileId.get(mainImageFileId)
+    if (mainImage) {
+      groups.set(`main:${mainImageFileId}`, [
+        {
+          storyboardId: 'main',
+          shotId: '主图',
+          variantId: 'main',
+          narrativeRole: 'visual_mother_frame',
+          isPrimaryVariant: true,
+          x: mainImage.x,
+          y: mainImage.y,
+          width: mainImage.width,
+          height: mainImage.height,
+        },
+      ])
+    }
+  }
+
+  const decorations: OrderedExcalidrawElement[] = []
+
+  Array.from(groups.values()).forEach((items) => {
+    if (!items.length) {
+      return
+    }
+
+    const sortedItems = [...items].sort((a, b) => a.x - b.x)
+    const primaryItem =
+      sortedItems.find((item) => item.isPrimaryVariant) || sortedItems[0]
+    const isMainGroup = primaryItem.storyboardId === 'main'
+    const minX = Math.min(...sortedItems.map((item) => item.x))
+    const minY = Math.min(...sortedItems.map((item) => item.y))
+    const maxX = Math.max(...sortedItems.map((item) => item.x + item.width))
+    const maxY = Math.max(...sortedItems.map((item) => item.y + item.height))
+    const groupLabelText = isMainGroup
+      ? '主图 · 视觉母版'
+      : `${primaryItem.shotId} · ${
+          STORYBOARD_ROLE_LABELS[primaryItem.narrativeRole] ||
+          primaryItem.narrativeRole ||
+          'storyboard'
+        } · ${
+          sortedItems.length
+        } 候选`
+    const groupBorderId = isMainGroup
+      ? `storyboard-decoration-group-main-${primaryItem.shotId}`
+      : `storyboard-decoration-group-${primaryItem.storyboardId}-${primaryItem.shotId}`
+    const groupLabelId = isMainGroup
+      ? `storyboard-decoration-group-label-main-${primaryItem.shotId}`
+      : `storyboard-decoration-group-label-${primaryItem.storyboardId}-${primaryItem.shotId}`
+    const primaryBorderId = isMainGroup
+      ? ''
+      : `storyboard-decoration-primary-${primaryItem.storyboardId}-${primaryItem.shotId}-${primaryItem.variantId}`
+    const primaryLabelId = isMainGroup
+      ? ''
+      : `storyboard-decoration-primary-label-${primaryItem.storyboardId}-${primaryItem.shotId}-${primaryItem.variantId}`
+
+    const groupElements = [
+      {
+        type: 'rectangle',
+        id: groupBorderId,
+        x: minX - 14,
+        y: minY - 42,
+        width: maxX - minX + 28,
+        height: maxY - minY + 56,
+        angle: 0,
+        strokeColor: isMainGroup ? '#10b981' : '#60a5fa',
+        backgroundColor: 'transparent',
+        fillStyle: 'solid',
+        strokeWidth: isMainGroup ? 2.5 : 1.5,
+        strokeStyle: isMainGroup ? 'solid' : 'dashed',
+        roundness: null,
+        roughness: 0,
+        opacity: 100,
+        seed: Math.random(),
+        version: 1,
+        versionNonce: Math.random(),
+        isDeleted: false,
+        groupIds: [],
+        boundElements: [],
+        updated: Date.now(),
+        frameId: null,
+        index: null,
+        locked: true,
+        link: null,
+        customData: {
+          storyboardDecoration: 'shot-group-border',
+          storyboardId: primaryItem.storyboardId,
+          shotId: primaryItem.shotId,
+        },
+      } as any,
+      {
+        type: 'text',
+        id: groupLabelId,
+        x: minX,
+        y: minY - 32,
+        width: Math.max(220, maxX - minX),
+        height: 24,
+        angle: 0,
+        text: groupLabelText,
+        fontSize: 16,
+        fontFamily: 1,
+        textAlign: 'left',
+        verticalAlign: 'top',
+        strokeColor: isMainGroup ? '#065f46' : '#1d4ed8',
+        backgroundColor: 'transparent',
+        fillStyle: 'solid',
+        strokeWidth: 1,
+        strokeStyle: 'solid',
+        roundness: null,
+        roughness: 0,
+        opacity: 100,
+        seed: Math.random(),
+        version: 1,
+        versionNonce: Math.random(),
+        isDeleted: false,
+        groupIds: [],
+        boundElements: [],
+        updated: Date.now(),
+        frameId: null,
+        index: null,
+        locked: true,
+        link: null,
+        customData: {
+          storyboardDecoration: 'shot-group-label',
+          storyboardId: primaryItem.storyboardId,
+          shotId: primaryItem.shotId,
+        },
+      } as any,
+    ]
+
+    const primaryElements = isMainGroup
+      ? []
+      : [
+          {
+            type: 'rectangle',
+            id: primaryBorderId,
+            x: primaryItem.x - 8,
+            y: primaryItem.y - 8,
+            width: primaryItem.width + 16,
+            height: primaryItem.height + 16,
+            angle: 0,
+            strokeColor: '#f59e0b',
+            backgroundColor: 'transparent',
+            fillStyle: 'solid',
+            strokeWidth: 2.5,
+            strokeStyle: 'solid',
+            roundness: null,
+            roughness: 0,
+            opacity: 100,
+            seed: Math.random(),
+            version: 1,
+            versionNonce: Math.random(),
+            isDeleted: false,
+            groupIds: [],
+            boundElements: [],
+            updated: Date.now(),
+            frameId: null,
+            index: null,
+            locked: true,
+            link: null,
+            customData: {
+              storyboardDecoration: 'primary-variant-border',
+              storyboardId: primaryItem.storyboardId,
+              shotId: primaryItem.shotId,
+              variantId: primaryItem.variantId,
+            },
+          } as any,
+          {
+            type: 'text',
+            id: primaryLabelId,
+            x: primaryItem.x,
+            y: primaryItem.y + primaryItem.height + 8,
+            width: Math.max(180, primaryItem.width),
+            height: 22,
+            angle: 0,
+            text: `主版本 · ${primaryItem.variantId}`,
+            fontSize: 14,
+            fontFamily: 1,
+            textAlign: 'left',
+            verticalAlign: 'top',
+            strokeColor: '#92400e',
+            backgroundColor: 'transparent',
+            fillStyle: 'solid',
+            strokeWidth: 1,
+            strokeStyle: 'solid',
+            roundness: null,
+            roughness: 0,
+            opacity: 100,
+            seed: Math.random(),
+            version: 1,
+            versionNonce: Math.random(),
+            isDeleted: false,
+            groupIds: [],
+            boundElements: [],
+            updated: Date.now(),
+            frameId: null,
+            index: null,
+            locked: true,
+            link: null,
+            customData: {
+              storyboardDecoration: 'primary-variant-label',
+              storyboardId: primaryItem.storyboardId,
+              shotId: primaryItem.shotId,
+              variantId: primaryItem.variantId,
+            },
+          } as any,
+        ]
+
+    decorations.push(
+      ...(convertToExcalidrawElements([
+        ...groupElements,
+        ...primaryElements,
+      ]) as OrderedExcalidrawElement[])
+    )
+  })
+
+  return decorations
+}
+
 const extractPersistedVideoState = (
   initialData?: ExcalidrawInitialDataState
 ) => {
@@ -152,7 +452,7 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
   canvasId,
   initialData,
 }) => {
-  const { excalidrawAPI, setExcalidrawAPI } = useCanvas()
+  const { excalidrawAPI, setExcalidrawAPI, mainImageFileId } = useCanvas()
 
   const { i18n } = useTranslation()
 
@@ -197,6 +497,9 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
         ...persistedVideoElementsRef.current,
       }
       const nonVideoElements = elements.filter((element) => {
+        if (isStoryboardDecorationElement(element as { customData?: any })) {
+          return false
+        }
         if (element.type !== 'embeddable') {
           return true
         }
@@ -381,9 +684,12 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
 
     suppressNextSaveRef.current = true
     excalidrawAPI.updateScene({
-      elements: normalizedData?.elements || [],
+      elements: [
+        ...(normalizedData?.elements || []),
+        ...buildStoryboardDecorations(normalizedData, mainImageFileId),
+      ],
     })
-  }, [canvasId, excalidrawAPI, initialData])
+  }, [canvasId, excalidrawAPI, initialData, mainImageFileId])
 
   const addImageToExcalidraw = useCallback(
     async (imageElement: ExcalidrawImageElement, file: BinaryFileData) => {

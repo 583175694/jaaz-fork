@@ -45,6 +45,7 @@ async def generate_new_image_element(
     fileid: str,
     image_data: Dict[str, Any],
     canvas_data: Optional[Dict[str, Any]] = None,
+    preferred_position: Optional[Dict[str, float]] = None,
 ) -> Dict[str, Any]:
     """Generate new image element for canvas"""
     if canvas_data is None:
@@ -53,9 +54,11 @@ async def generate_new_image_element(
             canvas = {"data": {}}
         canvas_data = canvas.get("data", {})
 
-
-
-    new_x, new_y = await find_next_best_element_position(canvas_data)
+    if preferred_position:
+        new_x = float(preferred_position.get("x", 0) or 0)
+        new_y = float(preferred_position.get("y", 0) or 0)
+    else:
+        new_x, new_y = await find_next_best_element_position(canvas_data)
 
     return {
         "type": "image",
@@ -100,6 +103,7 @@ async def save_image_to_canvas(
     height: int,
     generation_metadata: Optional[Dict[str, Any]] = None,
     storyboard_metadata: Optional[Dict[str, Any]] = None,
+    preferred_position: Optional[Dict[str, float]] = None,
 ) -> str:
     """Save image to canvas with proper locking and positioning"""
     # Use lock to ensure atomicity of the save process
@@ -148,7 +152,8 @@ async def save_image_to_canvas(
                 'width': width,
                 'height': height,
             },
-            canvas_data
+            canvas_data,
+            preferred_position=preferred_position,
         )
 
         # Update the canvas data with the new element and file info

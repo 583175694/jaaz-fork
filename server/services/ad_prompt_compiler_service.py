@@ -62,6 +62,12 @@ def _create_text_model(text_model: ModelInfo) -> ChatOpenAI:
     provider = text_model.get("provider")
     url = text_model.get("url")
     api_key = config_service.app_config.get(provider, {}).get("api_key", "")
+    if not provider or not str(provider).strip():
+        raise ValueError("Text model provider is missing for prompt compilation")
+    if not url or not str(url).strip():
+        raise ValueError(f"Text model URL is missing for provider `{provider}`")
+    if not api_key or not str(api_key).strip():
+        raise ValueError(f"Text model API key is missing for provider `{provider}`")
     http_client = HttpClient.create_sync_client()
     http_async_client = HttpClient.create_async_client()
     return ChatOpenAI(
@@ -170,7 +176,6 @@ async def compile_creative_brief(
     platform_hint: Optional[str] = None,
 ) -> CreativeBrief:
     await ensure_config_initialized()
-    llm = _create_text_model(text_model)
     print(
         "🧠 compile_creative_brief start",
         {
@@ -218,6 +223,7 @@ Runtime constraints:
 - platform_hint: {platform_hint or "not specified"}
 """
     try:
+        llm = _create_text_model(text_model)
         response = await llm.ainvoke([{"role": "user", "content": prompt}])
         parsed = _parse_json_response(_extract_text(response))
         brief = _normalize_brief(parsed, duration, aspect_ratio)
@@ -375,7 +381,6 @@ async def compile_video_prompt(
     selection_mode: str = "reference_images",
 ) -> VideoPromptCompilation:
     await ensure_config_initialized()
-    llm = _create_text_model(text_model)
     prompt = f"""
 You are a professional commercial film prompt director. Convert the user's request and creative brief into a JSON video prompt plan for an advertising generation model.
 
@@ -415,6 +420,7 @@ Runtime constraints:
 - selection_mode: {selection_mode}
 """
     try:
+        llm = _create_text_model(text_model)
         response = await llm.ainvoke([{"role": "user", "content": prompt}])
         parsed = _parse_json_response(_extract_text(response))
         compiled = _fallback_video_compilation(

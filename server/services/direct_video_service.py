@@ -1,12 +1,20 @@
 import asyncio
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from nanoid import generate
 
 from models.config_model import ModelInfo
 from services.ad_video_prompt_runtime import compile_ad_video_prompt
 from services.db_service import db_service
+from services.prompt_confirmation_service import request_prompt_bundle_confirmation
+from services.production_workflow_service import (
+    build_video_brief_asset,
+    collect_primary_storyboard_variants,
+    get_current_continuity_asset,
+    load_canvas_data,
+    upsert_video_brief,
+)
 from services.stream_service import add_stream_task, get_stream_task, remove_stream_task
 from services.websocket_service import send_to_websocket
 from tools.utils.image_utils import process_input_image
@@ -30,6 +38,25 @@ def _build_model_info() -> Dict[str, List[ModelInfo]]:
                 "type": "video",
             }
         ]
+    }
+
+
+def _normalize_text_model(data: Dict[str, Any]) -> Optional[ModelInfo]:
+    text_model = data.get("text_model", {})
+    if not isinstance(text_model, dict):
+        return None
+
+    provider = str(text_model.get("provider", "") or "").strip()
+    model = str(text_model.get("model", "") or "").strip()
+    url = str(text_model.get("url", "") or "").strip()
+    if not provider or not model:
+        return None
+
+    return {
+        "provider": provider,
+        "model": model,
+        "url": url,
+        "type": "text",
     }
 
 
@@ -59,10 +86,119 @@ def _normalize_frame_file_id(data: Dict[str, Any], key: str) -> str:
     return str(data.get(key, "") or "").strip()
 
 
+async def _resolve_storyboard_video_selection(
+    canvas_id: str,
+    file_ids: List[str],
+    start_frame_file_id: str,
+    end_frame_file_id: str,
+) -> Dict[str, Any]:
+    canvas_data = await load_canvas_data(canvas_id)
+    files = canvas_data.get("files", {}) if isinstance(canvas_data, dict) else {}
+    if not isinstance(files, dict):
+        files = {}
+
+    selected_file_ids = [str(file_id or "").strip() for file_id in file_ids if str(file_id or "").strip()]
+    selected_storyboard_id = ""
+    continuity_ids = set()
+    continuity_versions = set()
+
+    for file_id in selected_file_ids:
+        file_info = files.get(file_id)
+        if not isinstance(file_info, dict):
+            continue
+        meta = file_info.get("storyboardMeta")
+        if not isinstance(meta, dict):
+            continue
+        storyboard_id = str(meta.get("storyboard_id", "") or "")
+        continuity_id = str(meta.get("continuity_id", "") or "")
+        continuity_version = int(meta.get("continuity_version", 1) or 1)
+        if storyboard_id and not selected_storyboard_id:
+            selected_storyboard_id = storyboard_id
+        if continuity_id:
+            continuity_ids.add(continuity_id)
+        continuity_versions.add(continuity_version)
+
+    if selected_storyboard_id:
+        primary_variants = collect_primary_storyboard_variants(canvas_data, selected_storyboard_id)
+        if primary_variants:
+            selected_file_ids = [str(item.get("file_id", "") or "") for item in primary_variants]
+            if not start_frame_file_id:
+                start_frame_file_id = selected_file_ids[0] if selected_file_ids else ""
+            if not end_frame_file_id:
+                end_frame_file_id = selected_file_ids[-1] if selected_file_ids else ""
+
+    return {
+        "canvas_data": canvas_data,
+        "file_ids": selected_file_ids,
+        "start_frame_file_id": start_frame_file_id,
+        "end_frame_file_id": end_frame_file_id,
+        "storyboard_id": selected_storyboard_id,
+        "continuity_ids": continuity_ids,
+        "continuity_versions": continuity_versions,
+    }
+
+
+def _build_video_prompt_confirmation_payload(
+    compiled: Dict[str, Any],
+    selected_image_count: int,
+    duration: int,
+    aspect_ratio: str,
+    resolution: str,
+    video_brief: Dict[str, Any] | None = None,
+    selected_storyboard_variants: List[Dict[str, Any]] | None = None,
+) -> Dict[str, Any]:
+    brief = compiled.get("brief", {}) if isinstance(compiled, dict) else {}
+    storyboard_meta = (
+        compiled.get("selected_frame_storyboard_meta", {})
+        if isinstance(compiled, dict)
+        else {}
+    )
+    start_frame_meta = storyboard_meta.get("start_frame", {}) if isinstance(storyboard_meta, dict) else {}
+    end_frame_meta = storyboard_meta.get("end_frame", {}) if isinstance(storyboard_meta, dict) else {}
+    prompt = (
+        "请基于当前已选分镜生成视频，保持人物、产品、场景和灯光的连续性，"
+        "并按照分镜关系完成开场、推进和收束。\n\n"
+        f"目标：{str(brief.get('objective', '') or '输出一条连续的短视频')}\n"
+        f"调性：{str(brief.get('tone', '') or 'premium commercial')}\n"
+        f"参考分镜数量：{selected_image_count}\n"
+        f"时长：{duration} 秒\n"
+        f"比例：{aspect_ratio}\n"
+        f"分辨率：{resolution}"
+    )
+    execution_prompt = prompt + "\n" + str(compiled.get("video_prompt", "") or "")
+    return {
+        "prompt": execution_prompt,
+        "brief_id": str((video_brief or {}).get("brief_id", "") or ""),
+        "video_brief": video_brief or {},
+        "continuity_summary": {
+            "start_frame": start_frame_meta,
+            "end_frame": end_frame_meta,
+        },
+        "display_summary": {
+            "duration": duration,
+            "aspect_ratio": aspect_ratio,
+            "resolution": resolution,
+            "selected_image_count": selected_image_count,
+            "selected_storyboard_variants": selected_storyboard_variants or [],
+            "start_frame": {
+                "shot_id": str(start_frame_meta.get("shot_id", "") or ""),
+                "narrative_role": str(start_frame_meta.get("narrative_role", "") or ""),
+                "shot_family_id": str(start_frame_meta.get("shot_family_id", "") or ""),
+            },
+            "end_frame": {
+                "shot_id": str(end_frame_meta.get("shot_id", "") or ""),
+                "narrative_role": str(end_frame_meta.get("narrative_role", "") or ""),
+                "shot_family_id": str(end_frame_meta.get("shot_family_id", "") or ""),
+            },
+        },
+    }
+
+
 async def handle_direct_video(data: Dict[str, Any]) -> None:
     messages: List[Dict[str, Any]] = data.get("messages", [])
     session_id: str = data.get("session_id", "")
     canvas_id: str = data.get("canvas_id", "")
+    text_model = _normalize_text_model(data)
     prompt: str = str(data.get("prompt", "") or "")
     file_ids = _normalize_file_ids(data)
     selection_mode = _normalize_selection_mode(data)
@@ -77,6 +213,11 @@ async def handle_direct_video(data: Dict[str, Any]) -> None:
         {
             "session_id": session_id,
             "canvas_id": canvas_id,
+            "text_model": (
+                f"{text_model.get('provider')}:{text_model.get('model')}"
+                if text_model
+                else ""
+            ),
             "model_name": model_name,
             "file_ids": file_ids,
             "duration": duration,
@@ -124,8 +265,8 @@ async def handle_direct_video(data: Dict[str, Any]) -> None:
     if not any(session.get("id") == session_id for session in existing_sessions):
         await db_service.create_chat_session(
             session_id,
-            model_name,
-            "apipodvideo",
+            text_model.get("model") if text_model else model_name,
+            text_model.get("provider") if text_model else "apipodvideo",
             canvas_id,
             (prompt[:200] if prompt else "Generate Video"),
         )
@@ -148,6 +289,7 @@ async def handle_direct_video(data: Dict[str, Any]) -> None:
             duration=duration,
             aspect_ratio=aspect_ratio,
             resolution=resolution,
+            text_model=text_model,
         )
     )
     print(
@@ -187,6 +329,7 @@ async def _process_direct_video_generation(
     duration: int,
     aspect_ratio: str,
     resolution: str,
+    text_model: Optional[ModelInfo],
 ) -> None:
     ai_response = await create_direct_video_response(
         session_id=session_id,
@@ -200,6 +343,7 @@ async def _process_direct_video_generation(
         duration=duration,
         aspect_ratio=aspect_ratio,
         resolution=resolution,
+        text_model=text_model,
     )
 
     await db_service.create_message(session_id, "assistant", json.dumps(ai_response))
@@ -221,8 +365,25 @@ async def create_direct_video_response(
     duration: int,
     aspect_ratio: str,
     resolution: str,
+    text_model: Optional[ModelInfo],
 ) -> Dict[str, Any]:
     try:
+        selection = await _resolve_storyboard_video_selection(
+            canvas_id=canvas_id,
+            file_ids=file_ids,
+            start_frame_file_id=start_frame_file_id,
+            end_frame_file_id=end_frame_file_id,
+        )
+        file_ids = selection["file_ids"]
+        start_frame_file_id = selection["start_frame_file_id"]
+        end_frame_file_id = selection["end_frame_file_id"]
+        storyboard_id = str(selection.get("storyboard_id", "") or "")
+        continuity_ids = selection.get("continuity_ids", set())
+        continuity_versions = selection.get("continuity_versions", set())
+
+        if len(continuity_ids) > 1 or len(continuity_versions) > 1:
+            raise RuntimeError("当前选中的分镜主版本存在多个 continuity 版本，暂不能直接生成视频。请先统一分镜版本。")
+
         model_name = get_apipod_video_model_name()
         if len(file_ids) > 1 and not apipod_video_supports_multi_reference_images(model_name):
             raise RuntimeError(format_apipod_multi_reference_images_not_supported_error(model_name))
@@ -240,6 +401,7 @@ async def create_direct_video_response(
             selection_mode=selection_mode,
             start_frame_file_id=start_frame_file_id,
             end_frame_file_id=end_frame_file_id,
+            text_model=text_model,
         )
         brief = compiled["brief"]
         print(
@@ -252,7 +414,7 @@ async def create_direct_video_response(
                 "product_priority": brief.get("product_priority"),
             },
         )
-        video_prompt = str(compiled["video_prompt"] or prompt)
+        compiled_video_prompt = str(compiled["video_prompt"] or prompt)
         print(
             "🎬 direct_video compiled prompt",
             {
@@ -267,9 +429,62 @@ async def create_direct_video_response(
                 "selected_frame_storyboard_roles": list(
                     (compiled.get("selected_frame_storyboard_meta") or {}).keys()
                 ),
-                "prompt_preview": video_prompt[:300],
+                "prompt_preview": compiled_video_prompt[:300],
             },
         )
+        continuity_asset = await get_current_continuity_asset(canvas_id)
+        selected_storyboard_variants: List[Dict[str, Any]] = []
+        if storyboard_id:
+            for item in collect_primary_storyboard_variants(selection.get("canvas_data", {}), storyboard_id):
+                meta = item.get("storyboard_meta", {})
+                if not isinstance(meta, dict):
+                    continue
+                selected_storyboard_variants.append(
+                    {
+                        "shot_id": str(meta.get("shot_id", "") or ""),
+                        "narrative_role": str(meta.get("narrative_role", "") or ""),
+                        "shot_family_id": str(meta.get("shot_family_id", "") or ""),
+                        "variant_id": str(meta.get("variant_id", "") or ""),
+                    }
+                )
+        video_brief = build_video_brief_asset(
+            continuity_asset=continuity_asset,
+            compiled=compiled,
+            storyboard_id=storyboard_id,
+            duration=duration,
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
+        )
+        await upsert_video_brief(canvas_id, video_brief)
+
+        confirmation_payload = _build_video_prompt_confirmation_payload(
+            compiled=compiled,
+            selected_image_count=len(file_ids),
+            duration=duration,
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
+            video_brief=video_brief,
+            selected_storyboard_variants=selected_storyboard_variants,
+        )
+
+        confirmation_status = await request_prompt_bundle_confirmation(
+            session_id=session_id,
+            tool_name="generate_video_from_storyboard",
+            payload=confirmation_payload,
+        )
+        if confirmation_status == "revise":
+            return {
+                "role": "assistant",
+                "content": "已返回修改，请调整分镜选择或视频参数后重新提交。",
+            }
+        if confirmation_status != "confirmed":
+            return {
+                "role": "assistant",
+                "content": "已取消视频生成。",
+            }
+
+        video_brief["status"] = "confirmed"
+        await upsert_video_brief(canvas_id, video_brief)
 
         input_images = []
         for file_id in file_ids[:APIPOD_VIDEO_REFERENCE_IMAGES_MAX]:
@@ -288,7 +503,7 @@ async def create_direct_video_response(
         normalized_input_images = input_images or None
 
         result = await generate_video_with_provider(
-            prompt=video_prompt,
+            prompt=str(confirmation_payload.get("prompt", "") or compiled_video_prompt),
             resolution=resolution,
             duration=duration,
             aspect_ratio=aspect_ratio,

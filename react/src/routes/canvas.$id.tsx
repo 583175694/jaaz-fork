@@ -99,7 +99,7 @@ function Canvas() {
   }
 
   return (
-    <CanvasProvider>
+    <CanvasProvider canvasId={id}>
       <div className='flex flex-col w-screen h-screen'>
         <CanvasHeader
           canvasName={canvasName}

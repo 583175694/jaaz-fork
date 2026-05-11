@@ -94,6 +94,7 @@ export interface SessionToolCallConfirmedEvent extends SessionBaseEvent {
 export interface SessionToolCallCancelledEvent extends SessionBaseEvent {
   type: SessionEventType.ToolCallCancelled
   id: string
+  reason?: 'cancel' | 'revise' | 'timeout'
 }
 
 export type SessionUpdateEvent =

@@ -1,6 +1,7 @@
 import { sendDirectVideoGenerate } from '@/api/video'
 import { getCanvas } from '@/api/canvas'
 import { uploadImage } from '@/api/upload'
+import { useConfigs } from '@/contexts/configs'
 import { eventBus, TCanvasGenerateVideoEvent } from '@/lib/event'
 import { dataURLToFile } from '@/lib/utils'
 import { Message, PendingType } from '@/types/types'
@@ -26,6 +27,7 @@ const ChatCanvasVideoGenerator: React.FC<ChatCanvasVideoGeneratorProps> = ({
   setPending,
   scrollToBottom,
 }) => {
+  const { textModel } = useConfigs()
   const inFlightRef = useRef(false)
 
   const handleGenerateVideo = useCallback(
@@ -135,6 +137,7 @@ const ChatCanvasVideoGenerator: React.FC<ChatCanvasVideoGeneratorProps> = ({
           sessionId,
           canvasId,
           newMessages: newMessages,
+          textModel,
           fileIds: resolvedImages.map((image) => image.fileId),
           prompt: '',
           duration,
@@ -200,6 +203,7 @@ const ChatCanvasVideoGenerator: React.FC<ChatCanvasVideoGeneratorProps> = ({
       sessionId,
       setMessages,
       setPending,
+      textModel,
     ]
   )
 

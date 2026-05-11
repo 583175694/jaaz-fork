@@ -1,5 +1,4 @@
 import { Button } from '@/components/ui/button'
-import { useCanvas } from '@/contexts/canvas'
 import { eventBus, TCanvasAddImagesToChatEvent } from '@/lib/event'
 import { toast } from 'sonner'
 import { memo } from 'react'
@@ -24,7 +23,6 @@ const CanvasVideoGenerator = ({
   selectedImages,
 }: CanvasVideoGeneratorProps) => {
   const { t } = useTranslation()
-  const { excalidrawAPI } = useCanvas()
 
   const handleGenerateVideo = async () => {
     if (selectedImages.length === 0) {
@@ -60,10 +58,6 @@ const CanvasVideoGenerator = ({
       aspectRatio: '16:9',
       resolution: '1080p',
       selectionMode: 'start_end_frames',
-    })
-
-    excalidrawAPI?.updateScene({
-      appState: { selectedElementIds: {} },
     })
   }
 

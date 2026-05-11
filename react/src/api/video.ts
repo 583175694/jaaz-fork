@@ -1,9 +1,10 @@
-import { Message } from '@/types/types'
+import { Message, Model } from '@/types/types'
 
 export const sendDirectVideoGenerate = async (payload: {
   sessionId: string
   canvasId: string
   newMessages: Message[]
+  textModel?: Model
   fileIds: string[]
   prompt: string
   duration: number
@@ -22,6 +23,7 @@ export const sendDirectVideoGenerate = async (payload: {
       messages: payload.newMessages,
       session_id: payload.sessionId,
       canvas_id: payload.canvasId,
+      text_model: payload.textModel,
       file_ids: payload.fileIds,
       prompt: payload.prompt,
       duration: payload.duration,

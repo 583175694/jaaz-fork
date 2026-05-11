@@ -43,13 +43,13 @@ def _infer_storyboard_metadata(prompt: str, aspect_ratio: str) -> Dict[str, Any]
 
     narrative_role = "generic_storyboard_frame"
     if any(signal in lower_prompt for signal in ["opening", "hook", "开场", "首镜", "scene 1", "shot 1"]):
-        narrative_role = "opening_hook"
+        narrative_role = "establishing"
     elif any(signal in lower_prompt for signal in ["hero packshot", "收尾", "结尾", "resolution", "hero resolution", "scene 4", "shot 4"]):
-        narrative_role = "hero_resolution"
+        narrative_role = "closure"
     elif any(signal in lower_prompt for signal in ["reveal", "product reveal", "卖点", "scene 2", "shot 2"]):
-        narrative_role = "product_reveal"
+        narrative_role = "progression"
     elif any(signal in lower_prompt for signal in ["benefit", "demonstration", "scene 3", "shot 3"]):
-        narrative_role = "benefit_demonstration"
+        narrative_role = "reaction"
 
     shot_id_match = re.search(r"\b(?:scene|shot)\s*([0-9]+)\b", normalized_prompt, flags=re.I)
     shot_id = ""
@@ -78,6 +78,9 @@ async def generate_image_with_provider(
     prompt: str,
     aspect_ratio: str = "1:1",
     input_images: Optional[list[str]] = None,
+    metadata_overrides: Optional[Dict[str, Any]] = None,
+    storyboard_metadata_overrides: Optional[Dict[str, Any]] = None,
+    preferred_position: Optional[Dict[str, float]] = None,
 ) -> str:
     """
     通用图像生成函数，支持不同的模型和提供商
@@ -117,7 +120,10 @@ async def generate_image_with_provider(
     if input_images:
         processed_input_images = []
         for image_path in input_images:
-            processed_image = await process_input_image(image_path)
+            processed_image = await process_input_image(
+                image_path,
+                canvas_id=canvas_id,
+            )
             if processed_image:
                 processed_input_images.append(processed_image)
 
@@ -131,7 +137,11 @@ async def generate_image_with_provider(
         "aspect_ratio": aspect_ratio,
         "input_images": input_images or [],
     }
+    if metadata_overrides:
+        metadata.update(metadata_overrides)
     storyboard_metadata = _infer_storyboard_metadata(prompt, aspect_ratio)
+    if storyboard_metadata_overrides:
+        storyboard_metadata.update(storyboard_metadata_overrides)
 
     # Generate image using the selected provider
     mime_type, width, height, filename = await provider_instance.generate(
@@ -165,6 +175,7 @@ async def generate_image_with_provider(
         height,
         generation_metadata=metadata,
         storyboard_metadata=storyboard_metadata,
+        preferred_position=preferred_position,
     )
     print(
         "🖼️ image persisted to canvas",

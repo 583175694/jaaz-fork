@@ -1,6 +1,12 @@
 #server/routers/chat_router.py
 from fastapi import APIRouter, Request
 from services.chat_service import handle_chat
+from services.direct_storyboard_service import (
+    handle_direct_multiview,
+    handle_direct_storyboard,
+    handle_direct_storyboard_refine,
+    set_storyboard_primary_variant,
+)
 from services.direct_video_service import handle_direct_video
 from services.magic_service import handle_magic
 from services.stream_service import get_stream_task
@@ -70,6 +76,37 @@ async def direct_video(request: Request):
     data = await request.json()
     await handle_direct_video(data)
     return {"status": "done"}
+
+
+@router.post("/direct_storyboard")
+async def direct_storyboard(request: Request):
+    data = await request.json()
+    await handle_direct_storyboard(data)
+    return {"status": "done"}
+
+
+@router.post("/direct_multiview")
+async def direct_multiview(request: Request):
+    data = await request.json()
+    await handle_direct_multiview(data)
+    return {"status": "done"}
+
+
+@router.post("/storyboard/refine")
+async def storyboard_refine(request: Request):
+    data = await request.json()
+    await handle_direct_storyboard_refine(data)
+    return {"status": "done"}
+
+
+@router.post("/storyboard/mark_primary")
+async def storyboard_mark_primary(request: Request):
+    data = await request.json()
+    result = await set_storyboard_primary_variant(
+        canvas_id=str(data.get("canvas_id", "") or ""),
+        file_id=str(data.get("file_id", "") or ""),
+    )
+    return {"status": "done", "result": result}
 
 @router.post("/magic/cancel/{session_id}")
 async def cancel_magic(session_id: str) -> Dict[str, str]:

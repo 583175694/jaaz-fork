@@ -10,9 +10,25 @@ import {
 } from 'lucide-react'
 import MultiChoicePrompt from '../MultiChoicePrompt'
 import SingleChoicePrompt from '../SingleChoicePrompt'
+import PromptConfirmationContent from './PromptConfirmationContent'
 import WritePlanToolCall from './WritePlanToolcall'
 import ToolCallContentV2 from './ToolCallContent'
 import { useTranslation } from 'react-i18next'
+
+const CONFIRMATION_DISPLAY_LABELS: Record<string, string> = {
+  prompt: 'Prompt',
+  display_summary: '任务摘要',
+  task_type: '任务类型',
+  continuity_asset: 'Continuity 资产',
+  storyboard_plan: '分镜规划',
+  video_brief: '视频 Brief',
+}
+
+const CONFIRMATION_TOOL_NAMES = new Set([
+  'generate_storyboard_from_main_image',
+  'generate_multiview_variant',
+  'generate_video_from_storyboard',
+])
 
 type ToolCallTagProps = {
   toolCall: ToolCall
@@ -21,6 +37,7 @@ type ToolCallTagProps = {
   requiresConfirmation?: boolean
   onConfirm?: () => void
   onCancel?: () => void
+  onRevise?: () => void
 }
 
 const ToolCallTag: React.FC<ToolCallTagProps> = ({
@@ -30,6 +47,7 @@ const ToolCallTag: React.FC<ToolCallTagProps> = ({
   requiresConfirmation = false,
   onConfirm,
   onCancel,
+  onRevise,
 }) => {
   const { name, arguments: inputs } = toolCall.function
   const { t } = useTranslation()
@@ -48,6 +66,7 @@ const ToolCallTag: React.FC<ToolCallTagProps> = ({
   }
 
   const needsConfirmation = requiresConfirmation
+  const isPromptConfirmationTool = CONFIRMATION_TOOL_NAMES.has(name)
 
   let parsedArgs = null
   const trimmedInputs = inputs.trim()
@@ -89,6 +108,15 @@ const ToolCallTag: React.FC<ToolCallTagProps> = ({
       }
     }
   }
+
+  const resolvedPrompt =
+    parsedArgs && typeof parsedArgs === 'object'
+      ? typeof parsedArgs.prompt === 'string'
+        ? parsedArgs.prompt
+        : typeof parsedArgs.display_prompt_zh === 'string'
+          ? parsedArgs.display_prompt_zh
+          : null
+      : null
 
   // 普通模式的样式
   return (
@@ -151,23 +179,31 @@ const ToolCallTag: React.FC<ToolCallTagProps> = ({
           <div className="p-3">
             {parsedArgs && Object.keys(parsedArgs).length > 0 ? (
               <div className="space-y-2">
-                {Object.entries(parsedArgs).map(([key, value]) => (
-                  <div
-                    key={key}
-                    className="bg-white dark:bg-gray-950 border border-green-200 dark:border-green-950 rounded-md p-3 hover:shadow-sm transition-shadow"
-                  >
-                    <div className="flex flex-col gap-1">
-                      <span className="font-bold text-green-900 dark:text-green-100">
-                        {key}:
-                      </span>
-                      <div className="text-gray-600 dark:text-gray-400 leading-relaxed break-all">
-                        {typeof value == 'object'
-                          ? JSON.stringify(value, null, 2)
-                          : String(value)}
+                {isPromptConfirmationTool && (
+                  <PromptConfirmationContent
+                    parsedArgs={parsedArgs as Record<string, unknown>}
+                    resolvedPrompt={resolvedPrompt}
+                  />
+                )}
+
+                {!isPromptConfirmationTool &&
+                  Object.entries(parsedArgs).map(([key, value]) => (
+                    <div
+                      key={key}
+                      className="bg-white dark:bg-gray-950 border border-green-200 dark:border-green-950 rounded-md p-3 hover:shadow-sm transition-shadow"
+                    >
+                      <div className="flex flex-col gap-1">
+                        <span className="font-bold text-green-900 dark:text-green-100">
+                          {CONFIRMATION_DISPLAY_LABELS[key] ?? key}:
+                        </span>
+                        <div className="text-gray-600 dark:text-gray-400 leading-relaxed break-all">
+                          {typeof value == 'object'
+                            ? JSON.stringify(value, null, 2)
+                            : String(value)}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
               </div>
             ) : (
               <div className="bg-white dark:bg-gray-950 border border-green-200 dark:border-green-950 rounded-md p-3 hover:shadow-sm transition-shadow">
@@ -182,6 +218,15 @@ const ToolCallTag: React.FC<ToolCallTagProps> = ({
             {needsConfirmation && (
               <div className="mt-4 pt-4 border-t border-green-200 dark:border-green-800">
                 <div className="flex gap-2">
+                  {isPromptConfirmationTool && (
+                    <Button
+                      onClick={onRevise}
+                      variant="outline"
+                      className="flex-1 border-blue-300 text-blue-700 hover:bg-blue-100"
+                    >
+                      返回修改
+                    </Button>
+                  )}
                   <Button
                     onClick={onConfirm}
                     className="flex-1 bg-green-600 hover:bg-green-700 text-white"

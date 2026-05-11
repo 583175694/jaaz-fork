@@ -1,4 +1,11 @@
-import { CanvasData, Message, Session } from '@/types/types'
+import {
+  CanvasData,
+  ContinuityAsset,
+  Message,
+  Session,
+  StoryboardPlanAsset,
+  VideoBriefAsset,
+} from '@/types/types'
 import { ToolInfo } from '@/api/model'
 
 export type ListCanvasesResponse = {
@@ -40,6 +47,73 @@ export async function getCanvas(
   id: string
 ): Promise<{ data: CanvasData; name: string; sessions: Session[] }> {
   const response = await fetch(`/api/canvas/${id}`)
+  return await response.json()
+}
+
+export async function getCurrentContinuity(
+  canvasId: string
+): Promise<{ item: ContinuityAsset | null }> {
+  const response = await fetch(`/api/continuity/${canvasId}/current`)
+  return await response.json()
+}
+
+export async function getCurrentMainImage(
+  canvasId: string
+): Promise<{ file_id: string }> {
+  const response = await fetch(`/api/main_image/${canvasId}/current`)
+  return await response.json()
+}
+
+export async function setCurrentMainImage(
+  canvasId: string,
+  fileId: string
+): Promise<{ status: string; file_id: string }> {
+  const response = await fetch(`/api/main_image/${canvasId}/current`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      file_id: fileId,
+    }),
+  })
+  return await response.json()
+}
+
+export async function getStoryboardPlan(
+  canvasId: string,
+  storyboardId: string
+): Promise<{ item: StoryboardPlanAsset | null }> {
+  const response = await fetch(`/api/storyboard/${canvasId}/${storyboardId}`)
+  return await response.json()
+}
+
+export async function getCurrentStoryboardPlan(
+  canvasId: string
+): Promise<{ item: StoryboardPlanAsset | null }> {
+  const response = await fetch(`/api/storyboard/${canvasId}/current`)
+  return await response.json()
+}
+
+export async function getCurrentVideoBrief(
+  canvasId: string
+): Promise<{ item: VideoBriefAsset | null }> {
+  const response = await fetch(`/api/video/brief/${canvasId}/current`)
+  return await response.json()
+}
+
+export type PendingWorkflowItem = {
+  tool_call_id: string
+  session_id: string
+  tool_name: string
+  kind?: string
+  target_id?: string
+  arguments: Record<string, unknown>
+  created_at: string
+}
+
+export async function getPendingWorkflowConfirmations(
+  sessionId: string
+): Promise<{ items: PendingWorkflowItem[] }> {
+  const response = await fetch(`/api/workflow/${sessionId}/pending`)
   return await response.json()
 }
 

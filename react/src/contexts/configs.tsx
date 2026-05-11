@@ -38,7 +38,7 @@ export const ConfigsProvider = ({
 }: {
   children: React.ReactNode
 }) => {
-  const DEFAULT_PROVIDER_PRIORITY = ['zenlayer', 'apipodcode', 'openai', 'ollama']
+  const DEFAULT_PROVIDER_PRIORITY = ['apipodcode', 'zenlayer', 'openai', 'ollama']
   const configsStore = useConfigsStore()
   const {
     setTextModels,
@@ -70,11 +70,11 @@ export const ConfigsProvider = ({
 
     // 设置选择的文本模型
     const textModel = localStorage.getItem('text_model')
-    const zenlayerDefaultModel = llmModels.find(
-      (m) => m.provider === 'zenlayer' && m.model === 'gpt-5.4'
+    const apipodDefaultModel = llmModels.find(
+      (m) => m.provider === 'apipodcode' && m.model === 'gpt-5.4'
     )
     const shouldMigrateStoredTextModel =
-      textModel === 'apipodcode:gpt-5.4' && !!zenlayerDefaultModel
+      textModel === 'zenlayer:gpt-5.4' && !!apipodDefaultModel
 
     if (
       textModel &&

@@ -85,6 +85,7 @@ def _merge_persisted_video_data(
         **incoming_data,
         "elements": merged_elements,
         "files": merged_files,
+        "production": existing_data.get("production", incoming_data.get("production", {})),
     }
 
 @router.get("/list")

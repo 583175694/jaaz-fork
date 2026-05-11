@@ -16,8 +16,39 @@ from services.config_service import config_service
 from services.db_service import db_service
 
 
+def _is_text_provider_usable(provider_name: str) -> bool:
+    provider_config = config_service.app_config.get(provider_name, {})
+    api_key = str(provider_config.get("api_key", "") or "").strip()
+    url = str(provider_config.get("url", "") or "").strip()
+    return bool(api_key and url)
+
+
+def _is_text_model_usable(text_model: ModelInfo) -> bool:
+    provider_name = str(text_model.get("provider", "") or "").strip()
+    model_name = str(text_model.get("model", "") or "").strip()
+    return bool(provider_name and model_name and _is_text_provider_usable(provider_name))
+
+
 def _get_default_text_model() -> ModelInfo:
+    preferred_providers = ["apipodcode", "zenlayer", "openai", "ollama"]
+
+    for provider_name in preferred_providers:
+        provider_config = config_service.app_config.get(provider_name, {})
+        if not _is_text_provider_usable(provider_name):
+            continue
+        models = provider_config.get("models", {})
+        for model_name, model_config in models.items():
+            if model_config.get("type") == "text":
+                return {
+                    "provider": provider_name,
+                    "model": model_name,
+                    "url": provider_config.get("url", ""),
+                    "type": "text",
+                }
+
     for provider_name, provider_config in config_service.app_config.items():
+        if not _is_text_provider_usable(provider_name):
+            continue
         models = provider_config.get("models", {})
         for model_name, model_config in models.items():
             if model_config.get("type") == "text":
@@ -43,19 +74,54 @@ async def resolve_session_text_model(session_id: str) -> ModelInfo:
         provider_config = config_service.app_config.get(provider, {})
         provider_models = provider_config.get("models", {})
         model_config = provider_models.get(model, {})
-        if provider and model and model_config.get("type") == "text":
+        if (
+            provider
+            and model
+            and model_config.get("type") == "text"
+            and _is_text_provider_usable(provider)
+        ):
             return {
                 "provider": provider,
                 "model": model,
                 "url": provider_config.get("url", ""),
                 "type": "text",
             }
+        if provider and model and model_config.get("type") == "text":
+            print(
+                "⚠️ Session text model is configured but unusable for ad video compiler",
+                {
+                    "session_id": session_id,
+                    "provider": provider,
+                    "model": model,
+                    "has_api_key": bool(str(provider_config.get("api_key", "") or "").strip()),
+                    "has_url": bool(str(provider_config.get("url", "") or "").strip()),
+                },
+            )
 
     print(
         "⚠️ Falling back to default text model for ad video compiler",
         {"session_id": session_id},
     )
     return _get_default_text_model()
+
+
+def resolve_explicit_text_model(text_model: Optional[ModelInfo]) -> Optional[ModelInfo]:
+    if not isinstance(text_model, dict):
+        return None
+
+    provider = str(text_model.get("provider", "") or "").strip()
+    model = str(text_model.get("model", "") or "").strip()
+    url = str(text_model.get("url", "") or "").strip()
+    if not provider or not model:
+        return None
+
+    resolved_url = url or str(config_service.app_config.get(provider, {}).get("url", "") or "").strip()
+    return {
+        "provider": provider,
+        "model": model,
+        "url": resolved_url,
+        "type": "text",
+    }
 
 
 def _extract_text_from_content(content: Any) -> str:
@@ -328,8 +394,13 @@ async def compile_ad_video_prompt(
     selection_mode: str = "reference_images",
     start_frame_file_id: str = "",
     end_frame_file_id: str = "",
+    text_model: Optional[ModelInfo] = None,
 ) -> Dict[str, Any]:
-    text_model = await resolve_session_text_model(session_id)
+    explicit_text_model = resolve_explicit_text_model(text_model)
+    if explicit_text_model and _is_text_model_usable(explicit_text_model):
+        text_model = explicit_text_model
+    else:
+        text_model = await resolve_session_text_model(session_id)
     selection_context = resolve_video_selection_context(
         explicit_prompt=prompt,
         messages=messages,
@@ -414,35 +485,62 @@ async def compile_ad_video_prompt(
     effective_platform_hint = platform_hint
     if selection_context["selection_mode"] == "start_end_frames":
         effective_platform_hint = f"{platform_hint} with same-scene storyboard bridge"
-    brief = await compile_creative_brief(
-        text_model=text_model,
-        user_prompt=compilation_context,
-        duration=duration,
-        aspect_ratio=aspect_ratio,
-        platform_hint=effective_platform_hint,
-    )
-    compiled_video_prompt = await compile_video_prompt(
-        text_model=text_model,
-        brief=brief,
-        original_prompt=compilation_context,
-        duration=duration,
-        aspect_ratio=aspect_ratio,
-        resolution=resolution,
-        selected_image_count=selected_image_count,
-        selection_mode=selection_context["selection_mode"],
-    )
-    video_prompt = str(compiled_video_prompt.get("final_prompt") or prompt)
-    qa_issues = evaluate_video_prompt(compiled_video_prompt)
-    if qa_issues:
+    if _is_text_model_usable(text_model):
+        brief = await compile_creative_brief(
+            text_model=text_model,
+            user_prompt=compilation_context,
+            duration=duration,
+            aspect_ratio=aspect_ratio,
+            platform_hint=effective_platform_hint,
+        )
+        compiled_video_prompt = await compile_video_prompt(
+            text_model=text_model,
+            brief=brief,
+            original_prompt=compilation_context,
+            duration=duration,
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
+            selected_image_count=selected_image_count,
+            selection_mode=selection_context["selection_mode"],
+        )
+        video_prompt = str(compiled_video_prompt.get("final_prompt") or prompt)
+        qa_issues = evaluate_video_prompt(compiled_video_prompt)
+        if qa_issues:
+            print(
+                "🎬 ad video compiler QA issues detected, rewriting once",
+                {
+                    "session_id": session_id,
+                    "issues": qa_issues,
+                },
+            )
+            compiled_video_prompt = rewrite_video_prompt(compiled_video_prompt, qa_issues)
+            video_prompt = str(compiled_video_prompt.get("final_prompt") or video_prompt)
+    else:
         print(
-            "🎬 ad video compiler QA issues detected, rewriting once",
+            "⚠️ No usable text model configured for ad video compiler, using deterministic fallback",
             {
                 "session_id": session_id,
-                "issues": qa_issues,
+                "provider": text_model.get("provider"),
+                "model": text_model.get("model"),
             },
         )
-        compiled_video_prompt = rewrite_video_prompt(compiled_video_prompt, qa_issues)
-        video_prompt = str(compiled_video_prompt.get("final_prompt") or video_prompt)
+        brief = build_fallback_brief(
+            user_prompt=compilation_context,
+            duration=duration,
+            aspect_ratio=aspect_ratio,
+            platform_hint=effective_platform_hint,
+        )
+        compiled_video_prompt = _fallback_video_compilation(
+            brief=brief,
+            original_prompt=compilation_context,
+            duration=duration,
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
+            selected_image_count=selected_image_count,
+            selection_mode=selection_context["selection_mode"],
+        )
+        video_prompt = str(compiled_video_prompt.get("final_prompt") or prompt)
+        qa_issues = evaluate_video_prompt(compiled_video_prompt)
     if not video_prompt.strip():
         brief = build_fallback_brief(
             user_prompt=compilation_context,
@@ -460,6 +558,7 @@ async def compile_ad_video_prompt(
             selection_mode=selection_context["selection_mode"],
         )
         video_prompt = str(compiled_video_prompt.get("final_prompt") or prompt)
+        qa_issues = evaluate_video_prompt(compiled_video_prompt)
 
     return {
         "text_model": text_model,

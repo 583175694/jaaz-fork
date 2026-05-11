@@ -15,6 +15,8 @@ const CanvasPopbarWrapper = () => {
   const [showAddToChat, setShowAddToChat] = useState(false)
   const [showMagicGenerate, setShowMagicGenerate] = useState(false)
   const [showGenerateVideo, setShowGenerateVideo] = useState(false)
+  const [showGenerateStoryboard, setShowGenerateStoryboard] = useState(false)
+  const [showGenerateMultiview, setShowGenerateMultiview] = useState(false)
 
   const selectedImagesRef = useRef<TCanvasAddImagesToChatEvent>([])
   const selectedElementsRef = useRef<OrderedExcalidrawElement[]>([])
@@ -26,6 +28,8 @@ const CanvasPopbarWrapper = () => {
       setShowAddToChat(false)
       setShowMagicGenerate(false)
       setShowGenerateVideo(false)
+      setShowGenerateStoryboard(false)
+      setShowGenerateMultiview(false)
       return
     }
 
@@ -35,8 +39,11 @@ const CanvasPopbarWrapper = () => {
 
     // 判断是否显示添加到对话按钮：选中图片元素
     const hasSelectedImages = selectedImages.length > 0
+    const hasSingleSelectedImage = selectedImages.length === 1
     setShowAddToChat(hasSelectedImages)
     setShowGenerateVideo(hasSelectedImages)
+    setShowGenerateStoryboard(hasSingleSelectedImage)
+    setShowGenerateMultiview(hasSingleSelectedImage)
 
     // 判断是否显示魔法生成按钮：选中2个以上元素（包含所有类型）
     const selectedCount = Object.keys(selectedIds).length
@@ -57,6 +64,7 @@ const CanvasPopbarWrapper = () => {
         const id = isBase64 ? file.id : file.dataURL.split('/').at(-1)!
         return {
           fileId: id,
+          canvasFileId: file.id,
           base64: file.dataURL,
           width: image.width,
           height: image.height,
@@ -120,6 +128,8 @@ const CanvasPopbarWrapper = () => {
             showAddToChat={showAddToChat}
             showMagicGenerate={showMagicGenerate}
             showGenerateVideo={showGenerateVideo}
+            showGenerateStoryboard={showGenerateStoryboard}
+            showGenerateMultiview={showGenerateMultiview}
           />
         )}
       </AnimatePresence>
