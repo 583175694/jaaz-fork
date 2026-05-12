@@ -6,11 +6,13 @@ import traceback
 from utils.http_client import HttpClient
 from langgraph_swarm import create_swarm  # type: ignore
 from langchain_openai import ChatOpenAI
+import langchain_openai.chat_models.base as langchain_openai_base
 from langchain_ollama import ChatOllama
 from services.websocket_service import send_to_websocket  # type: ignore
 from services.config_service import config_service
 from typing import Optional, List, Dict, Any, cast, Set, TypedDict
 from models.config_model import ModelInfo
+import json
 
 
 class ContextInfo(TypedDict):
@@ -18,6 +20,231 @@ class ContextInfo(TypedDict):
     canvas_id: str
     session_id: str
     model_info: Dict[str, List[ModelInfo]]
+
+
+def _sanitize_openai_message_content(
+    content: Any,
+    *,
+    role: str,
+    has_tool_calls: bool,
+) -> Any:
+    """Normalize message content before sending it to OpenAI-compatible APIs.
+
+    APIPod rejects list-style text blocks whose `text` field is an empty string.
+    LangGraph/LangChain can produce those blocks for assistant tool-call turns.
+    """
+    if content is None:
+        if has_tool_calls:
+            return "Calling tools."
+        if role == "tool":
+            return "Tool executed successfully."
+        return content
+
+    if isinstance(content, str):
+        if content.strip():
+            return content
+        if has_tool_calls:
+            return "Calling tools."
+        if role == "tool":
+            return "Tool executed successfully."
+        return content
+
+    if not isinstance(content, list):
+        return content
+
+    sanitized_blocks: List[Any] = []
+    for block in content:
+        if isinstance(block, str):
+            if block.strip():
+                sanitized_blocks.append(block)
+            continue
+
+        if not isinstance(block, dict):
+            sanitized_blocks.append(block)
+            continue
+
+        block_type = block.get("type")
+        if block_type == "text":
+            text = block.get("text")
+            if isinstance(text, str) and text.strip():
+                sanitized_blocks.append({**block, "text": text})
+            continue
+
+        sanitized_blocks.append(block)
+
+    if sanitized_blocks:
+        return sanitized_blocks
+
+    if has_tool_calls:
+        return "Calling tools."
+    if role == "tool":
+        return "Tool executed successfully."
+    return sanitized_blocks
+
+
+def _sanitize_openai_payload_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Remove empty text blocks and normalize tool-call turns."""
+    sanitized_messages: List[Dict[str, Any]] = []
+    for index, message in enumerate(messages):
+        if not isinstance(message, dict):
+            sanitized_messages.append(message)
+            continue
+
+        normalized_message = dict(message)
+        role = str(normalized_message.get("role", "") or "")
+        has_tool_calls = bool(
+            normalized_message.get("tool_calls")
+            or normalized_message.get("function_call")
+        )
+        original_content = normalized_message.get("content")
+        normalized_content = _sanitize_openai_message_content(
+            original_content,
+            role=role,
+            has_tool_calls=has_tool_calls,
+        )
+        if normalized_content != original_content:
+            print(
+                "🧹 sanitized outbound model message",
+                {
+                    "index": index,
+                    "role": role,
+                    "has_tool_calls": has_tool_calls,
+                    "original_content_type": type(original_content).__name__,
+                    "normalized_content_type": type(normalized_content).__name__ if normalized_content is not None else "NoneType",
+                },
+            )
+        normalized_message["content"] = normalized_content
+        sanitized_messages.append(normalized_message)
+
+    return sanitized_messages
+
+
+def _find_empty_text_blocks(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    findings: List[Dict[str, Any]] = []
+    for index, message in enumerate(messages):
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        for block_index, block in enumerate(content):
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") != "text":
+                continue
+            text = block.get("text")
+            if isinstance(text, str) and not text.strip():
+                findings.append(
+                    {
+                        "message_index": index,
+                        "block_index": block_index,
+                        "role": message.get("role"),
+                        "has_tool_calls": bool(message.get("tool_calls")),
+                        "tool_call_id": message.get("tool_call_id"),
+                        "message_keys": sorted(message.keys()),
+                    }
+                )
+    return findings
+
+
+_ORIGINAL_CONVERT_MESSAGE_TO_DICT = langchain_openai_base._convert_message_to_dict
+_CONVERT_PATCH_INSTALLED = False
+
+
+def _patched_convert_message_to_dict(message: Any) -> Dict[str, Any]:
+    message_dict = _ORIGINAL_CONVERT_MESSAGE_TO_DICT(message)
+    role = str(message_dict.get("role", "") or "")
+    has_tool_calls = bool(
+        message_dict.get("tool_calls")
+        or message_dict.get("function_call")
+    )
+    original_content = message_dict.get("content")
+    normalized_content = _sanitize_openai_message_content(
+        original_content,
+        role=role,
+        has_tool_calls=has_tool_calls,
+    )
+    if normalized_content != original_content:
+        print(
+            "🧹 patched message conversion sanitized content",
+            {
+                "role": role,
+                "has_tool_calls": has_tool_calls,
+                "original_content_type": type(original_content).__name__,
+                "normalized_content_type": type(normalized_content).__name__ if normalized_content is not None else "NoneType",
+            },
+        )
+    message_dict["content"] = normalized_content
+    return message_dict
+
+
+def _install_langchain_openai_payload_patch() -> None:
+    global _CONVERT_PATCH_INSTALLED
+    if _CONVERT_PATCH_INSTALLED:
+        return
+    langchain_openai_base._convert_message_to_dict = _patched_convert_message_to_dict
+    _CONVERT_PATCH_INSTALLED = True
+    print("🩹 installed langchain_openai message conversion patch")
+
+
+class APIPodCompatibleChatOpenAI(ChatOpenAI):
+    """ChatOpenAI wrapper that normalizes empty multimodal content blocks."""
+
+    def _get_request_payload(
+        self,
+        input_: Any,
+        *,
+        stop: Optional[List[str]] = None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        payload = super()._get_request_payload(input_, stop=stop, **kwargs)
+        messages = payload.get("messages")
+        if isinstance(messages, list):
+            sanitized_messages = _sanitize_openai_payload_messages(messages)
+            try:
+                with open("/tmp/jaaz-last-openai-payload.json", "w", encoding="utf-8") as payload_file:
+                    json.dump(
+                        {
+                            **payload,
+                            "messages": sanitized_messages,
+                        },
+                        payload_file,
+                        ensure_ascii=False,
+                        default=str,
+                    )
+            except Exception as write_error:
+                print("🟠 failed to persist outbound payload", write_error)
+            empty_text_findings = _find_empty_text_blocks(sanitized_messages)
+            if empty_text_findings:
+                print(
+                    "🟠 outbound payload still has empty text blocks",
+                    empty_text_findings,
+                )
+                print(
+                    "🟠 outbound payload excerpt",
+                    json.dumps(
+                        sanitized_messages[:6],
+                        ensure_ascii=False,
+                        default=str,
+                    )[:4000],
+                )
+            else:
+                print(
+                    "🧾 outbound model payload summary",
+                    [
+                        {
+                            "index": index,
+                            "role": message.get("role"),
+                            "has_tool_calls": bool(message.get("tool_calls")),
+                            "tool_call_id": message.get("tool_call_id"),
+                            "content_type": type(message.get("content")).__name__,
+                        }
+                        for index, message in enumerate(sanitized_messages[:8])
+                        if isinstance(message, dict)
+                    ],
+                )
+            payload["messages"] = sanitized_messages
+        return payload
 
 
 def _fix_chat_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -258,6 +485,7 @@ async def langgraph_multi_agent(
         # 0. 修复消息历史
         fixed_messages = _fix_chat_history(messages)
         fixed_messages = _compact_multimodal_history(fixed_messages)
+        fixed_messages = _sanitize_openai_payload_messages(fixed_messages)
         print(
             "🤖 langgraph_multi_agent start",
             {
@@ -333,6 +561,7 @@ async def langgraph_multi_agent(
 
 def _create_text_model(text_model: ModelInfo) -> Any:
     """创建语言模型实例"""
+    _install_langchain_openai_payload_patch()
     model = text_model.get('model')
     provider = text_model.get('provider')
     url = text_model.get('url')
@@ -351,12 +580,14 @@ def _create_text_model(text_model: ModelInfo) -> Any:
         # Create httpx client with SSL configuration for ChatOpenAI
         http_client = HttpClient.create_sync_client()
         http_async_client = HttpClient.create_async_client()
-        return ChatOpenAI(
+        return APIPodCompatibleChatOpenAI(
             model=model,
             api_key=api_key,  # type: ignore
             timeout=300,
             base_url=url,
             temperature=0,
+            disable_streaming="tool_calling",
+            model_kwargs={"parallel_tool_calls": False},
             # max_tokens=max_tokens, # TODO: 暂时注释掉有问题的参数
             http_client=http_client,
             http_async_client=http_async_client
@@ -370,7 +601,16 @@ async def _handle_error(error: Exception, session_id: str) -> None:
     print(f"Full traceback:\n{tb_str}")
     traceback.print_exc()
 
+    error_message = str(error)
+    normalized_error = error_message.lower()
+    if "invalid_api_key" in normalized_error or "authenticationerror" in normalized_error:
+        error_message = (
+            "Text model authentication failed. "
+            "Please update the API key for the selected text provider in Settings -> Providers. "
+            "Current failing model: apipodcode:gpt-5.4."
+        )
+
     await send_to_websocket(session_id, cast(Dict[str, Any], {
         'type': 'error',
-        'error': str(error)
+        'error': error_message
     }))

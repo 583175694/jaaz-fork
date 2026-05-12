@@ -7,10 +7,6 @@ export const BASE_API_URL =
 export const PROVIDER_NAME_MAPPING: {
   [key: string]: { name: string; icon: string }
 } = {
-  zenlayer: {
-    name: 'Zenlayer',
-    icon: 'https://docs.console.zenlayer.com/favicon.ico',
-  },
   apipodcode: {
     name: 'APIPodCode',
     icon: 'https://openai.com/favicon.ico',
@@ -60,9 +56,7 @@ export const TOOL_CALL_NAME_MAPPING: { [key in ToolCallFunctionName]: string } =
   }
 
 ;(TOOL_CALL_NAME_MAPPING as Record<string, string>)['generate_video_by_veo3_apipod'] =
-  'Google Veo 3.1 Fast'
-;(TOOL_CALL_NAME_MAPPING as Record<string, string>)['generate_video_by_veo3_zenlayer'] =
-  'Google Veo 3.1 Fast'
+  'Google Veo 3.1'
 
 export const LOGO_URL = 'https://jaaz.app/favicon.ico'
 

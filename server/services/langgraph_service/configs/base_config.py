@@ -50,10 +50,13 @@ def create_handoff_tool(
         state: Annotated[Dict[str, Any], InjectedState],
         tool_call_id: Annotated[str, InjectedToolCallId],
     ) -> Command[Any]:
+        resolved_tool_call_id = str(tool_call_id or "").strip()
+        if not resolved_tool_call_id:
+            resolved_tool_call_id = f"handoff_to_{_normalize_agent_name(agent_name)}"
         tool_message = ToolMessage(
             content=f"<hide_in_user_ui> Successfully transferred to {agent_name}",
             name=name,
-            tool_call_id=tool_call_id,
+            tool_call_id=resolved_tool_call_id,
         )
         return Command(
             goto=agent_name,

@@ -16,7 +16,36 @@ from tools.video_providers.apipod_provider import (
 )
 
 
-class GenerateVideoByVeo3ZenlayerInputSchema(BaseModel):
+def _resolve_ordered_reference_inputs(
+    input_images: list[str] | None,
+    selection_mode: str,
+    start_frame_file_id: str,
+    end_frame_file_id: str,
+) -> list[str]:
+    normalized_inputs = [str(file_id or "").strip() for file_id in (input_images or []) if str(file_id or "").strip()]
+    if selection_mode != "start_end_frames":
+        return normalized_inputs[:APIPOD_VIDEO_REFERENCE_IMAGES_MAX]
+
+    ordered_candidates = [
+        str(start_frame_file_id or "").strip(),
+        str(end_frame_file_id or "").strip(),
+    ]
+    ordered: list[str] = []
+    for candidate in ordered_candidates:
+        if candidate and candidate not in ordered:
+            ordered.append(candidate)
+
+    if not ordered and normalized_inputs:
+        ordered.append(normalized_inputs[0])
+    if len(ordered) < 2 and len(normalized_inputs) > 1:
+        tail_candidate = normalized_inputs[-1]
+        if tail_candidate and tail_candidate not in ordered:
+            ordered.append(tail_candidate)
+
+    return ordered[:APIPOD_VIDEO_REFERENCE_IMAGES_MAX]
+
+
+class GenerateVideoByVeo3ApipodInputSchema(BaseModel):
     prompt: str = Field(
         description="Required. The prompt for video generation. Describe what you want to see in the video."
     )
@@ -41,8 +70,8 @@ class GenerateVideoByVeo3ZenlayerInputSchema(BaseModel):
 
 @tool(
     "generate_video_by_veo3_apipod",
-    description="Generate videos using Google Veo 3.1 Fast via APIPod. Supports text-to-video and up to two reference images.",
-    args_schema=GenerateVideoByVeo3ZenlayerInputSchema,
+    description="Generate videos using Google Veo 3.1 via APIPod. Supports text-to-video and up to two ordered reference images for start/end frame control.",
+    args_schema=GenerateVideoByVeo3ApipodInputSchema,
 )
 async def generate_video_by_veo3_apipod(
     prompt: str,
@@ -101,7 +130,13 @@ async def generate_video_by_veo3_apipod(
                 break
 
     model_name = get_apipod_video_model_name()
-    if input_images and len(input_images) > 1 and not apipod_video_supports_multi_reference_images(model_name):
+    ordered_reference_inputs = _resolve_ordered_reference_inputs(
+        input_images=input_images,
+        selection_mode=selection_mode,
+        start_frame_file_id=start_frame_file_id,
+        end_frame_file_id=end_frame_file_id,
+    )
+    if ordered_reference_inputs and len(ordered_reference_inputs) > 1 and not apipod_video_supports_multi_reference_images(model_name):
         raise RuntimeError(format_apipod_multi_reference_images_not_supported_error(model_name))
 
     compiled = await compile_ad_video_prompt(
@@ -111,7 +146,7 @@ async def generate_video_by_veo3_apipod(
         duration=duration,
         aspect_ratio=aspect_ratio,
         resolution=resolution,
-        selected_image_count=len(input_images or []),
+        selected_image_count=len(ordered_reference_inputs),
         platform_hint="chat storyboard to video",
         canvas_id=canvas_id,
         selection_mode=selection_mode,
@@ -123,17 +158,18 @@ async def generate_video_by_veo3_apipod(
         "🎬 tool video compiled prompt",
         {
             "session_id": session_id,
-            "selected_image_count": len(input_images or []),
+            "selected_image_count": len(ordered_reference_inputs),
             "selection_mode": selection_mode,
             "start_frame_file_id": start_frame_file_id,
             "end_frame_file_id": end_frame_file_id,
+            "ordered_reference_inputs": ordered_reference_inputs,
             "prompt_preview": compiled_prompt[:300],
         },
     )
 
-    if input_images and len(input_images) > 0:
+    if ordered_reference_inputs:
         normalized_images = []
-        for file_id in input_images[:APIPOD_VIDEO_REFERENCE_IMAGES_MAX]:
+        for file_id in ordered_reference_inputs:
             processed_image = await process_input_image(file_id, canvas_id=canvas_id)
             if processed_image:
                 normalized_images.append(processed_image)
@@ -149,7 +185,7 @@ async def generate_video_by_veo3_apipod(
         tool_call_id=tool_call_id,
         config=config,
         input_images=processed_input_images,
-        source_file_ids=input_images,
+        source_file_ids=ordered_reference_inputs,
         camera_fixed=True,
         provider_hint="apipodvideo",
     )

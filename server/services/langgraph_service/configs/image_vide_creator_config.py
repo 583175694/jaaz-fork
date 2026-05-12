@@ -69,12 +69,11 @@ You MUST:
 1. Parse the XML to extract file_id attributes from <image> tags
 2. Use tools that support input_images parameter when images are present
 3. Pass the extracted file_id(s) in the input_images parameter as a list
-4. For standard text-to-image generation with no input_images, prefer generate_image_by_gpt_image_2_zenlayer when available
-5. Do not use generate_image_by_gpt_image_2_zenlayer when input_images are present, because it is text-to-image only
-6. If input_images are present, prefer generate_image_by_gpt_image_2_edit_apipod for reference-image or editing workflows
-7. Only fall back to other image tools with input_images support when generate_image_by_gpt_image_2_edit_apipod is unavailable
-8. For video generation → use video tools with input_images if images are present
-9. Never use generate_image_by_nano_banana for this workflow
+4. Prefer generate_image_by_gpt_image_2_edit_apipod when available for both standard generation and reference-image workflows
+5. When input_images are present, you MUST use a tool that supports input_images
+6. Only fall back to other image tools when generate_image_by_gpt_image_2_edit_apipod is unavailable
+7. For video generation → use video tools with input_images if images are present
+8. Never use generate_image_by_nano_banana for this workflow
 """
 
         batch_generation_prompt = """

@@ -51,7 +51,7 @@ const STORYBOARD_ROLE_LABELS: Record<string, string> = {
   progression: '推进镜头',
   reaction: '反应镜头',
   closure: '收束镜头',
-  visual_mother_frame: '视觉母版',
+  visual_mother_frame: '参考图',
 }
 
 type CanvasExcaliProps = {
@@ -233,7 +233,7 @@ const buildStoryboardDecorations = (
     const maxX = Math.max(...sortedItems.map((item) => item.x + item.width))
     const maxY = Math.max(...sortedItems.map((item) => item.y + item.height))
     const groupLabelText = isMainGroup
-      ? '主图 · 视觉母版'
+      ? '参考图'
       : `${primaryItem.shotId} · ${
           STORYBOARD_ROLE_LABELS[primaryItem.narrativeRole] ||
           primaryItem.narrativeRole ||
@@ -373,7 +373,7 @@ const buildStoryboardDecorations = (
             width: Math.max(180, primaryItem.width),
             height: 22,
             angle: 0,
-            text: `主版本 · ${primaryItem.variantId}`,
+            text: `当前推荐 · ${primaryItem.variantId}`,
             fontSize: 14,
             fontFamily: 1,
             textAlign: 'left',

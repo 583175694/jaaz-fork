@@ -176,6 +176,10 @@ def _normalize_messages(data: Dict[str, Any]) -> List[Dict[str, Any]]:
     return messages if isinstance(messages, list) else []
 
 
+def _normalize_skip_prompt_confirmation(data: Dict[str, Any]) -> bool:
+    return bool(data.get("skip_prompt_confirmation", False))
+
+
 def _resolve_reference_tool(requested_tool_id: str) -> Dict[str, str]:
     registered_tools = tool_service.get_all_tools()
     if requested_tool_id in registered_tools and requested_tool_id in REFERENCE_IMAGE_TOOL_MAPPING:
@@ -822,6 +826,7 @@ async def handle_direct_storyboard(data: Dict[str, Any]) -> None:
     shot_count = _normalize_shot_count(data)
     variant_count = _normalize_variant_count(data)
     image_tool_id = _normalize_tool_id(data)
+    skip_prompt_confirmation = _normalize_skip_prompt_confirmation(data)
 
     if not session_id or not canvas_id or not main_image_file_id:
         raise RuntimeError("Storyboard generation requires session_id, canvas_id, and main_image_file_id.")
@@ -848,6 +853,7 @@ async def handle_direct_storyboard(data: Dict[str, Any]) -> None:
             shot_count=shot_count,
             variant_count=variant_count,
             image_tool_id=image_tool_id,
+            skip_prompt_confirmation=skip_prompt_confirmation,
             messages=messages,
         )
     )
@@ -869,6 +875,7 @@ async def _process_direct_storyboard(
     shot_count: int,
     variant_count: int,
     image_tool_id: str,
+    skip_prompt_confirmation: bool,
     messages: List[Dict[str, Any]],
 ) -> None:
     response = await create_direct_storyboard_response(
@@ -881,6 +888,7 @@ async def _process_direct_storyboard(
         shot_count=shot_count,
         variant_count=variant_count,
         image_tool_id=image_tool_id,
+        skip_prompt_confirmation=skip_prompt_confirmation,
     )
     await db_service.create_message(session_id, "assistant", json.dumps(response))
     await send_to_websocket(session_id, {"type": "all_messages", "messages": messages + [response]})
@@ -896,6 +904,7 @@ async def create_direct_storyboard_response(
     shot_count: int,
     variant_count: int,
     image_tool_id: str,
+    skip_prompt_confirmation: bool,
 ) -> Dict[str, Any]:
     canvas_data = await _load_canvas_context(canvas_id)
     file_info = _get_canvas_file(canvas_data, main_image_file_id)
@@ -924,21 +933,22 @@ async def create_direct_storyboard_response(
         },
         "continuity_asset": continuity_asset,
     }
-    continuity_confirmation_status = await request_prompt_bundle_confirmation(
-        session_id=session_id,
-        tool_name="generate_storyboard_from_main_image",
-        payload=continuity_prompt_bundle,
-    )
-    if continuity_confirmation_status == "revise":
-        return {
-            "role": "assistant",
-            "content": "已返回修改，请先调整主图 continuity 约束后重新提交。",
-        }
-    if continuity_confirmation_status != "confirmed":
-        return {
-            "role": "assistant",
-            "content": "已取消主图 continuity 确认。",
-        }
+    if not skip_prompt_confirmation:
+        continuity_confirmation_status = await request_prompt_bundle_confirmation(
+            session_id=session_id,
+            tool_name="generate_storyboard_from_main_image",
+            payload=continuity_prompt_bundle,
+        )
+        if continuity_confirmation_status == "revise":
+            return {
+                "role": "assistant",
+                "content": "已返回修改，请先调整参考图约束后重新提交。",
+            }
+        if continuity_confirmation_status != "confirmed":
+            return {
+                "role": "assistant",
+                "content": "已取消分镜生成。",
+            }
 
     continuity_asset["status"] = "confirmed"
     continuity_asset["updated_at"] = continuity_asset.get("updated_at")
@@ -964,21 +974,22 @@ async def create_direct_storyboard_response(
     )
     prompt_bundle["storyboard_plan"] = storyboard_plan_asset
 
-    confirmation_status = await request_prompt_bundle_confirmation(
-        session_id=session_id,
-        tool_name="generate_storyboard_from_main_image",
-        payload=prompt_bundle,
-    )
-    if confirmation_status == "revise":
-        return {
-            "role": "assistant",
-            "content": "已返回修改，请调整分镜参数后重新提交。",
-        }
-    if confirmation_status != "confirmed":
-        return {
-            "role": "assistant",
-            "content": "已取消主图分镜生成。",
-        }
+    if not skip_prompt_confirmation:
+        confirmation_status = await request_prompt_bundle_confirmation(
+            session_id=session_id,
+            tool_name="generate_storyboard_from_main_image",
+            payload=prompt_bundle,
+        )
+        if confirmation_status == "revise":
+            return {
+                "role": "assistant",
+                "content": "已返回修改，请调整分镜参数后重新提交。",
+            }
+        if confirmation_status != "confirmed":
+            return {
+                "role": "assistant",
+                "content": "已取消分镜生成。",
+            }
     storyboard_plan_asset["status"] = "confirmed"
     await upsert_storyboard_plan(canvas_id, storyboard_plan_asset)
 
@@ -987,8 +998,8 @@ async def create_direct_storyboard_response(
         {
             "type": "info",
             "info": (
-                f"正在基于主图生成 {shot_count} 镜分镜。"
-                "首轮每镜先生成 1 个 primary 镜头，确认镜头差异后再扩展候选。"
+                f"正在生成 {shot_count} 张分镜图。"
+                "先为每个镜头生成一张可用结果，完成后你可以继续扩展更多角度。"
             ),
         },
     )
@@ -1078,8 +1089,7 @@ async def create_direct_storyboard_response(
     return {
         "role": "assistant",
         "content": (
-            f"已基于主图生成 {shot_count} 镜线性分镜。"
-            "首轮每镜已生成 1 个 primary 镜头，并按 shot family 结构回写到画布中。"
+            f"已生成 {shot_count} 张分镜图，结果已经回写到画布。"
         ),
     }
 

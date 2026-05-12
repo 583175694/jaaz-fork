@@ -4,10 +4,8 @@ import { motion } from 'motion/react'
 import { memo } from 'react'
 import { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types'
 import CanvasMagicGenerator from './CanvasMagicGenerator'
-import CanvasMainImageSelector from './CanvasMainImageSelector'
 import CanvasPopbar from './CanvasPopbar'
 import CanvasMultiviewGenerator from './CanvasMultiviewGenerator'
-import CanvasStoryboardPrimarySelector from './CanvasStoryboardPrimarySelector'
 import CanvasStoryboardGenerator from './CanvasStoryboardGenerator'
 import CanvasVideoGenerator from './CanvasVideoGenerator'
 
@@ -49,17 +47,11 @@ const CanvasPopbarContainer = ({
                 {showAddToChat && (
                     <CanvasPopbar selectedImages={selectedImages} />
                 )}
-                {showGenerateStoryboard && (
-                    <CanvasMainImageSelector selectedImages={selectedImages} />
-                )}
                 {showGenerateVideo && (
                     <CanvasVideoGenerator selectedImages={selectedImages} />
                 )}
                 {showGenerateStoryboard && (
                     <CanvasStoryboardGenerator selectedImages={selectedImages} />
-                )}
-                {showGenerateStoryboard && (
-                    <CanvasStoryboardPrimarySelector selectedImages={selectedImages} />
                 )}
                 {showGenerateMultiview && (
                     <CanvasMultiviewGenerator selectedImages={selectedImages} />

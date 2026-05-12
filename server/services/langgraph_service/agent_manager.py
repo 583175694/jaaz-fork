@@ -95,7 +95,8 @@ class AgentManager:
             name=config.name,
             model=model,
             tools=[*business_tools, *handoff_tools],
-            prompt=config.system_prompt
+            prompt=config.system_prompt,
+            version="v1",
         )
 
     @staticmethod

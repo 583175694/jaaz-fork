@@ -7,9 +7,11 @@ import json
 import time
 import os
 import asyncio
+import tempfile
 from contextlib import asynccontextmanager
 from typing import Dict, List, Any, Tuple, Optional, Union
 from services.config_service import FILES_DIR
+from services.config_service import config_service
 from services.db_service import db_service
 from services.websocket_service import send_to_websocket, broadcast_session_update  # type: ignore
 from common import DEFAULT_PORT
@@ -231,42 +233,106 @@ async def get_video_info_and_save(
     file_path_without_extension: str,
     headers: Optional[Dict[str, str]] = None,
 ) -> Tuple[str, int, int, str]:
-    # Fetch the video asynchronously
-    async with HttpClient.create_aiohttp() as session:
-        async with session.get(url, headers=headers) as response:
-            video_content = await response.read()
-
-    # Save to temporary mp4 file first
+    provider_config = config_service.app_config.get("apipodvideo", {})
+    max_attempts = max(int(provider_config.get("download_retry_attempts", 3) or 1), 1)
+    retry_delay_seconds = max(
+        float(provider_config.get("download_retry_delay_seconds", 2) or 0),
+        0.0,
+    )
     temp_path = f"{file_path_without_extension}.mp4"
-    async with aiofiles.open(temp_path, "wb") as out_file:
-        await out_file.write(video_content)
-    print("🎥 Video saved to", temp_path)
+    last_error: Optional[Exception] = None
 
-    try:
-        media_info = MediaInfo.parse(temp_path)  # type: ignore
-        width: int = 0
-        height: int = 0
+    for attempt in range(1, max_attempts + 1):
+        try:
+            async with HttpClient.create_aiohttp() as session:
+                async with session.get(url, headers=headers) as response:
+                    response.raise_for_status()
+                    video_content = await response.read()
+                    final_url = str(response.url)
+                    content_type = response.headers.get("Content-Type", "")
+                    content_length = response.headers.get("Content-Length", "")
 
-        for track in media_info.tracks:  # type: ignore
-            if track.track_type == "Video":  # type: ignore
-                width = int(track.width or 0)  # type: ignore
-                height = int(track.height or 0)  # type: ignore
-                print(f"Width: {width}, Height: {height}")
-                break
+            if not video_content:
+                raise RuntimeError("downloaded video is empty")
 
-        extension = "mp4"  # Default to mp4, can be flexible based on codec_name
+            probe_path = temp_path
+            if attempt < max_attempts:
+                temp_probe = tempfile.NamedTemporaryFile(
+                    suffix=".mp4",
+                    prefix="jaaz_video_probe_",
+                    delete=False,
+                )
+                temp_probe.close()
+                probe_path = temp_probe.name
 
-        # Get mime type
-        mime_type = mimetypes.types_map.get(".mp4", "video/mp4")
+            async with aiofiles.open(probe_path, "wb") as out_file:
+                await out_file.write(video_content)
 
-        print(
-            f"🎥 Video info - width: {width}, height: {height}, mime_type: {mime_type}, extension: {extension}"
-        )
+            print(
+                "🎥 Video download attempt",
+                {
+                    "attempt": attempt,
+                    "max_attempts": max_attempts,
+                    "status": response.status,
+                    "content_type": content_type,
+                    "content_length": content_length,
+                    "bytes": len(video_content),
+                    "final_url": final_url,
+                    "temp_path": probe_path,
+                },
+            )
 
-        return mime_type, width, height, extension
-    except Exception as e:
-        print(f"Error probing video file {temp_path}: {str(e)}")
-        raise e
+            try:
+                media_info = MediaInfo.parse(probe_path)  # type: ignore
+                width: int = 0
+                height: int = 0
+
+                for track in media_info.tracks:  # type: ignore
+                    if track.track_type == "Video":  # type: ignore
+                        width = int(track.width or 0)  # type: ignore
+                        height = int(track.height or 0)  # type: ignore
+                        print(f"Width: {width}, Height: {height}")
+                        break
+
+                if width <= 0 or height <= 0:
+                    raise RuntimeError(
+                        f"downloaded video is invalid: width={width}, height={height}"
+                    )
+
+                extension = "mp4"
+                mime_type = mimetypes.types_map.get(".mp4", "video/mp4")
+
+                print(
+                    f"🎥 Video info - width: {width}, height: {height}, mime_type: {mime_type}, extension: {extension}"
+                )
+
+                if probe_path != temp_path:
+                    os.replace(probe_path, temp_path)
+                print("🎥 Video saved to", temp_path)
+                return mime_type, width, height, extension
+            finally:
+                if probe_path != temp_path and os.path.exists(probe_path):
+                    os.remove(probe_path)
+
+        except Exception as exc:
+            last_error = exc
+            print(
+                "🎥 Video download validation failed",
+                {
+                    "attempt": attempt,
+                    "max_attempts": max_attempts,
+                    "url": url,
+                    "error": str(exc),
+                },
+            )
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            if attempt < max_attempts:
+                await asyncio.sleep(retry_delay_seconds)
+
+    raise RuntimeError(
+        f"video download validation failed after {max_attempts} attempts: {last_error}"
+    )
 
 
 async def generate_new_video_element(

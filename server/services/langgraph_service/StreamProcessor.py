@@ -155,6 +155,7 @@ class StreamProcessor:
                 "session_id": self.session_id,
                 "tool_names": [tc.get("name") for tc in self.tool_calls],
                 "tool_ids": [tc.get("id") for tc in self.tool_calls],
+                "tool_args": [tc.get("args") for tc in self.tool_calls],
             },
         )
 
@@ -171,6 +172,18 @@ class StreamProcessor:
 
         for tool_call in self.tool_calls:
             tool_name = tool_call.get('name')
+            tool_call_id = str(tool_call.get('id') or '').strip()
+
+            if not tool_call_id:
+                print(
+                    '🟠 tool call missing id',
+                    {
+                        'session_id': self.session_id,
+                        'tool_name': tool_name,
+                        'tool_call': tool_call,
+                    },
+                )
+                continue
 
             # 检查是否需要确认
             if tool_name in TOOLS_REQUIRING_CONFIRMATION:
@@ -181,7 +194,7 @@ class StreamProcessor:
             else:
                 await self.websocket_service(self.session_id, {
                     'type': 'tool_call',
-                    'id': tool_call.get('id'),
+                    'id': tool_call_id,
                     'name': tool_name,
                     'arguments': '{}'
                 })

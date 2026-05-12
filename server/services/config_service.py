@@ -46,22 +46,16 @@ DEFAULT_PROVIDERS_CONFIG: AppConfig = {
         'api_key': '',
         'max_tokens': 8192,
     },
-    'zenlayer': {
-        'models': {
-            'gpt-5.4': {'type': 'text'},
-            'veo-3.1-fast-generate-preview': {'type': 'video'},
-        },
-        'url': 'https://gateway.theturbo.ai/v1',
-        'api_key': '',
-        'max_tokens': 8192,
-    },
     'apipodvideo': {
         'models': {
+            'veo3-1-quality': {'type': 'video'},
             'veo3-1-fast': {'type': 'video'},
         },
         'url': 'https://api.apipod.ai/v1/videos/generations',
         'api_key': '',
         'max_tokens': 8192,
+        'download_retry_attempts': 3,
+        'download_retry_delay_seconds': 2,
     },
     'apipodgptimage': {
         'models': {},

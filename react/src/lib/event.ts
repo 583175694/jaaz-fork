@@ -27,7 +27,8 @@ export type TCanvasMagicGenerateEvent = {
 
 export type TCanvasGenerateVideoEvent = {
   selectedImages: TCanvasAddImagesToChatEvent
-  prompt: string
+  userPrompt: string
+  finalPrompt: string
   duration: number
   aspectRatio: string
   resolution: string
@@ -37,9 +38,9 @@ export type TCanvasGenerateVideoEvent = {
 export type TCanvasGenerateStoryboardEvent = {
   selectedImage: TCanvasAddImagesToChatEvent[number]
   mainImageFileId?: string
-  prompt: string
+  userPrompt: string
+  finalPrompt: string
   shotCount: number
-  variantCountPerShot: number
   aspectRatio: string
 }
 

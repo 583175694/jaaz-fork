@@ -40,9 +40,7 @@ const getConfiguredVideoModel = async () => {
   return String(config?.apipodvideo?.model_name || '')
 }
 
-const CanvasVideoGenerator = ({
-  selectedImages,
-}: CanvasVideoGeneratorProps) => {
+const CanvasVideoGenerator = ({ selectedImages }: CanvasVideoGeneratorProps) => {
   const { t } = useTranslation()
   const { canvasId } = useCanvas()
   const { textModel } = useConfigs()
@@ -131,8 +129,7 @@ const CanvasVideoGenerator = ({
 
     const imagesForPrompt = orderedImages.length > 0 ? orderedImages : normalizedSelectedImages
     const startFrame = imagesForPrompt[0]
-    const endFrame =
-      imagesForPrompt.length > 1 ? imagesForPrompt[1] : imagesForPrompt[0]
+    const endFrame = imagesForPrompt.length > 1 ? imagesForPrompt[1] : imagesForPrompt[0]
 
     setIsBuildingPrompt(true)
     try {
@@ -188,12 +185,12 @@ const CanvasVideoGenerator = ({
 
   return (
     <>
-      <Button variant="ghost" size="sm" onClick={() => setOpen(true)}>
+      <Button variant='ghost' size='sm' onClick={() => setOpen(true)}>
         {t('canvas:popbar.generateVideo')}
       </Button>
 
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className='max-w-4xl'>
           <DialogHeader>
             <DialogTitle>生成视频</DialogTitle>
             <DialogDescription>
@@ -201,7 +198,7 @@ const CanvasVideoGenerator = ({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-5">
+          <div className='space-y-5'>
             <div
               className={cn(
                 'grid gap-4',
@@ -210,9 +207,12 @@ const CanvasVideoGenerator = ({
             >
               {(orderedImages.length > 0 ? orderedImages : normalizedSelectedImages).map(
                 (image, index) => (
-                  <div key={`${image.fileId}-${index}`} className="rounded-xl border bg-muted/20 p-3">
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                      <div className="text-sm font-medium text-foreground">
+                  <div
+                    key={`${image.fileId}-${index}`}
+                    className='rounded-xl border bg-muted/20 p-3'
+                  >
+                    <div className='mb-3 flex items-center justify-between gap-3'>
+                      <div className='text-sm font-medium text-foreground'>
                         {orderedImages.length > 1
                           ? index === 0
                             ? '首帧参考'
@@ -220,20 +220,20 @@ const CanvasVideoGenerator = ({
                           : '参考画面'}
                       </div>
                       {orderedImages.length > 1 && (
-                        <div className="text-xs text-muted-foreground">
+                        <div className='text-xs text-muted-foreground'>
                           {index === 0 ? '将从这张图开始' : '将过渡到这张图结束'}
                         </div>
                       )}
                     </div>
-                    <div className="overflow-hidden rounded-lg border bg-background">
+                    <div className='overflow-hidden rounded-lg border bg-background'>
                       {image.base64 ? (
                         <img
                           src={image.base64}
                           alt={`Selected frame ${index + 1}`}
-                          className="aspect-video h-full w-full object-cover"
+                          className='aspect-video h-full w-full object-cover'
                         />
                       ) : (
-                        <div className="flex aspect-video items-center justify-center text-sm text-muted-foreground">
+                        <div className='flex aspect-video items-center justify-center text-sm text-muted-foreground'>
                           暂无预览
                         </div>
                       )}
@@ -244,138 +244,124 @@ const CanvasVideoGenerator = ({
             </div>
 
             {orderedImages.length > 1 && (
-              <div className="flex justify-center">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleSwapImages}
-                >
-                  <ArrowLeftRight className="mr-2 h-4 w-4" />
+              <div className='flex justify-center'>
+                <Button type='button' variant='outline' onClick={handleSwapImages}>
+                  <ArrowLeftRight className='mr-2 h-4 w-4' />
                   交换首尾顺序
                 </Button>
               </div>
             )}
 
-            <div className="rounded-xl border">
-              <button
-                type="button"
-                onClick={() => setShowAdvanced((prev) => !prev)}
-                className="flex w-full items-center justify-between px-4 py-3 text-left"
-              >
-                <div>
-                  <div className="text-sm font-medium">高级设置</div>
-                  <div className="text-xs text-muted-foreground">
-                    默认设置已经可直接使用，需要时再展开调整。
-                  </div>
-                </div>
-                {showAdvanced ? (
-                  <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                ) : (
-                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                )}
-              </button>
-
-              {showAdvanced && (
-                <div className="grid gap-4 border-t px-4 py-4 md:grid-cols-3">
-                  <div className="space-y-2">
-                    <div className="text-sm font-medium">时长</div>
-                    <Select
-                      value={duration}
-                      onValueChange={(value) => {
-                        setDuration(value)
-                        invalidateFinalPrompt()
-                      }}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="5">5 秒</SelectItem>
-                        <SelectItem value="6">6 秒</SelectItem>
-                        <SelectItem value="8">8 秒</SelectItem>
-                        <SelectItem value="10">10 秒</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="text-sm font-medium">比例</div>
-                    <Select
-                      value={aspectRatio}
-                      onValueChange={(value) => {
-                        setAspectRatio(value)
-                        invalidateFinalPrompt()
-                      }}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="16:9">16:9</SelectItem>
-                        <SelectItem value="9:16">9:16</SelectItem>
-                        <SelectItem value="1:1">1:1</SelectItem>
-                        <SelectItem value="4:5">4:5</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="text-sm font-medium">分辨率</div>
-                    <Select
-                      value={resolution}
-                      onValueChange={(value) => {
-                        setResolution(value)
-                        invalidateFinalPrompt()
-                      }}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="720p">720p</SelectItem>
-                        <SelectItem value="1080p">1080p</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-4">
-              <div className="rounded-xl border bg-muted/20 p-4">
-                <div className="mb-2 flex items-center gap-2 text-sm font-medium text-foreground">
-                  <Sparkles className="h-4 w-4" />
+            <div className='space-y-4'>
+              <div className='rounded-xl border bg-muted/20 p-4'>
+                <div className='mb-2 flex items-center gap-2 text-sm font-medium text-foreground'>
+                  <Sparkles className='h-4 w-4' />
                   最终视频提示词
-                </div>
-                <div className="mb-3 text-sm text-muted-foreground">
-                  系统会先生成一版基础提示词，你可以直接在这里修改成自己想要的版本。
                 </div>
                 <Textarea
                   value={finalPrompt}
                   onChange={(event) => setFinalPrompt(event.target.value)}
-                  placeholder={
-                    isBuildingPrompt
-                      ? '正在生成基础提示词...'
-                      : '打开弹框后会先自动生成一版基础提示词，你可以继续手动修改。'
-                  }
-                  className="min-h-72"
+                  placeholder={isBuildingPrompt ? '正在生成基础提示词...' : ''}
+                  className='min-h-72'
                 />
-              </div>
-              <div className="rounded-xl border border-dashed bg-background p-3 text-sm text-muted-foreground">
-                右侧对话区只会展示这份最终提示词，不会展示你调整提示词的过程。
               </div>
             </div>
           </div>
 
+          <div className='rounded-xl border'>
+            <button
+              type='button'
+              onClick={() => setShowAdvanced((prev) => !prev)}
+              className='flex w-full items-center justify-between px-4 py-3 text-left'
+            >
+              <div>
+                <div className='text-sm font-medium'>高级设置</div>
+                <div className='text-xs text-muted-foreground'>
+                  默认设置已经可直接使用，需要时再展开调整。
+                </div>
+              </div>
+              {showAdvanced ? (
+                <ChevronUp className='h-4 w-4 text-muted-foreground' />
+              ) : (
+                <ChevronDown className='h-4 w-4 text-muted-foreground' />
+              )}
+            </button>
+
+            {showAdvanced && (
+              <div className='grid gap-4 border-t px-4 py-4 md:grid-cols-3'>
+                <div className='space-y-2'>
+                  <div className='text-sm font-medium'>时长</div>
+                  <Select
+                    value={duration}
+                    onValueChange={(value) => {
+                      setDuration(value)
+                      invalidateFinalPrompt()
+                    }}
+                  >
+                    <SelectTrigger className='w-full'>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value='5'>5 秒</SelectItem>
+                      <SelectItem value='6'>6 秒</SelectItem>
+                      <SelectItem value='8'>8 秒</SelectItem>
+                      <SelectItem value='10'>10 秒</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className='space-y-2'>
+                  <div className='text-sm font-medium'>比例</div>
+                  <Select
+                    value={aspectRatio}
+                    onValueChange={(value) => {
+                      setAspectRatio(value)
+                      invalidateFinalPrompt()
+                    }}
+                  >
+                    <SelectTrigger className='w-full'>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value='16:9'>16:9</SelectItem>
+                      <SelectItem value='9:16'>9:16</SelectItem>
+                      <SelectItem value='1:1'>1:1</SelectItem>
+                      <SelectItem value='4:5'>4:5</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className='space-y-2'>
+                  <div className='text-sm font-medium'>分辨率</div>
+                  <Select
+                    value={resolution}
+                    onValueChange={(value) => {
+                      setResolution(value)
+                      invalidateFinalPrompt()
+                    }}
+                  >
+                    <SelectTrigger className='w-full'>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value='720p'>720p</SelectItem>
+                      <SelectItem value='1080p'>1080p</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
+          </div>
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
+            <Button variant='outline' onClick={() => setOpen(false)}>
               取消
             </Button>
             <Button onClick={handleBuildPrompt} disabled={isBuildingPrompt}>
               {isBuildingPrompt ? '正在生成基础提示词...' : '重新生成基础提示词'}
             </Button>
             <Button onClick={handleGenerateVideo}>
-              <Check className="mr-2 h-4 w-4" />
+              <Check className='mr-2 h-4 w-4' />
               开始生成视频
             </Button>
           </DialogFooter>

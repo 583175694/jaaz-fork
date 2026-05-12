@@ -70,10 +70,12 @@ const ModelSelectorV3: React.FC<ModelSelectorV3Props> = ({
   // Sort providers to put Jaaz first
   const sortProviders = <T,>(grouped: { [provider: string]: T[] }) => {
     const sortedEntries = Object.entries(grouped).sort(([a], [b]) => {
-      if (a === 'zenlayer') return -1
-      if (b === 'zenlayer') return 1
       if (a === 'apipodcode') return -1
       if (b === 'apipodcode') return 1
+      if (a === 'apipodgptimage') return -1
+      if (b === 'apipodgptimage') return 1
+      if (a === 'apipodvideo') return -1
+      if (b === 'apipodvideo') return 1
       if (a === 'openai') return -1
       if (b === 'openai') return 1
       return a.localeCompare(b)

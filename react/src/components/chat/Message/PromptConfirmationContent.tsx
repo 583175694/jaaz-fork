@@ -1,8 +1,8 @@
 const PROMPT_CONFIRMATION_OBJECT_SECTIONS = [
-  ['continuity_asset', 'Continuity 资产'],
-  ['storyboard_plan', '分镜规划'],
-  ['continuity_summary', '连续性摘要'],
-  ['video_brief', '视频 Brief'],
+  ['continuity_asset', '参考图设定'],
+  ['storyboard_plan', '分镜设定'],
+  ['continuity_summary', '连续要求'],
+  ['video_brief', '视频设定'],
 ] as const
 
 const renderSectionCard = (
@@ -31,7 +31,7 @@ const renderJsonBlock = (value: unknown) => (
 
 const renderMainImageSummary = (value: Record<string, unknown>) =>
   renderSectionCard(
-    '主图摘要:',
+    '参考图摘要:',
     <>
       {Object.entries(value).map(([summaryKey, summaryValue]) => (
         <div

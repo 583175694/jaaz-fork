@@ -93,32 +93,13 @@ const ChatCanvasVideoGenerator: React.FC<ChatCanvasVideoGeneratorProps> = ({
         const duration = data.duration
         const startFrame = resolvedImages[0]
         const endFrame = resolvedImages.length > 1 ? resolvedImages[1] : resolvedImages[0]
-        const inputImagesXml = resolvedImages
-          .map(
-            (image, index) =>
-              `<image index="${index + 1}" role="${index === 0 ? 'start_frame' : index === 1 ? 'end_frame' : 'reference'}" file_id="${image.fileId}" width="${image.width}" height="${image.height}" />`
-          )
-          .join('\n')
-        const videoIntentText =
-          '请基于当前会话中已经形成的广告创意、分镜说明和所选参考图生成视频。\n' +
-          '这是一条画布里的“选中分镜生成视频”操作请求，本身不提供新的创意内容；请优先继承上文已有的场景、人物、产品卖点、镜头职责和广告收束逻辑。\n' +
-          '将第 1 张图视为首帧，将第 2 张图视为尾帧；视频需要从首帧分镜自然过渡到尾帧分镜，保持人物、产品、场景与灯光的连续性。\n\n'
 
         const message: Message = {
           role: 'user',
           content: [
             {
               type: 'text',
-              text:
-                `${videoIntentText}` +
-                `<selection_mode>start_end_frames</selection_mode>\n` +
-                `<start_frame file_id="${startFrame.fileId}" />\n` +
-                `<end_frame file_id="${endFrame.fileId}" />\n` +
-                `<duration>${duration}</duration>\n` +
-                `<aspect_ratio>${data.aspectRatio}</aspect_ratio>\n` +
-                `<input_images count="${resolvedImages.length}">\n` +
-                `${inputImagesXml}\n` +
-                `</input_images>`,
+              text: data.finalPrompt,
             },
             ...resolvedImages.map((image) => ({
               type: 'image_url' as const,
@@ -139,13 +120,14 @@ const ChatCanvasVideoGenerator: React.FC<ChatCanvasVideoGeneratorProps> = ({
           newMessages: newMessages,
           textModel,
           fileIds: resolvedImages.map((image) => image.fileId),
-          prompt: '',
+          prompt: data.finalPrompt,
           duration,
           aspectRatio: data.aspectRatio,
           resolution: data.resolution,
           selectionMode: 'start_end_frames',
           startFrameFileId: startFrame.fileId,
           endFrameFileId: endFrame.fileId,
+          skipPromptConfirmation: true,
         })
 
         const startedAt = Date.now()

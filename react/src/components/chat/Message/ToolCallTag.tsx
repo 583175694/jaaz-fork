@@ -19,9 +19,9 @@ const CONFIRMATION_DISPLAY_LABELS: Record<string, string> = {
   prompt: 'Prompt',
   display_summary: '任务摘要',
   task_type: '任务类型',
-  continuity_asset: 'Continuity 资产',
-  storyboard_plan: '分镜规划',
-  video_brief: '视频 Brief',
+  continuity_asset: '参考图设定',
+  storyboard_plan: '分镜设定',
+  video_brief: '视频设定',
 }
 
 const CONFIRMATION_TOOL_NAMES = new Set([

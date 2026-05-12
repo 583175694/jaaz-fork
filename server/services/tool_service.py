@@ -5,7 +5,6 @@ from models.tool_model import ToolInfo
 from tools.comfy_dynamic import build_tool
 from tools.write_plan import write_plan_tool
 from tools.generate_image_by_gpt_image_1_jaaz import generate_image_by_gpt_image_1_jaaz
-from tools.generate_image_by_gpt_image_2_zenlayer import generate_image_by_gpt_image_2_zenlayer
 from tools.generate_image_by_gpt_image_2_edit_apipod import (
     generate_image_by_gpt_image_2_edit_apipod,
 )
@@ -60,12 +59,6 @@ from services.config_service import config_service
 from services.db_service import db_service
 
 TOOL_MAPPING: Dict[str, ToolInfo] = {
-    "generate_image_by_gpt_image_2_zenlayer": {
-        "display_name": "GPT Image 2",
-        "type": "image",
-        "provider": "zenlayer",
-        "tool_function": generate_image_by_gpt_image_2_zenlayer,
-    },
     "generate_image_by_gpt_image_2_edit_apipod": {
         "display_name": "GPT Image 2 Edit",
         "type": "image",
@@ -139,7 +132,7 @@ TOOL_MAPPING: Dict[str, ToolInfo] = {
         "tool_function": edit_image_by_doubao_seededit_3_volces,
     },
     "generate_video_by_veo3_apipod": {
-        "display_name": "Google Veo 3.1 Fast",
+        "display_name": "Google Veo 3.1",
         "type": "video",
         "provider": "apipodvideo",
         "tool_function": generate_video_by_veo3_apipod,

@@ -238,7 +238,7 @@ const CanvasMultiviewGenerator = ({
           )
           if (recentCandidateUrl) {
             cards.push({
-              label: shotFamilyId ? '同镜头家族最近候选' : '最近候选',
+              label: shotFamilyId ? '这一组最近结果' : '最近结果',
               url: recentCandidateUrl,
             })
           }
@@ -288,15 +288,15 @@ const CanvasMultiviewGenerator = ({
   return (
     <>
       <Button variant="ghost" size="sm" onClick={() => setOpen(true)}>
-        多视角
+        生成更多角度
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-5xl">
           <DialogHeader>
-            <DialogTitle>多机位 / 多视角编辑器</DialogTitle>
+            <DialogTitle>生成更多角度</DialogTitle>
             <DialogDescription>
-              用预设机位 + 三个参数在同一镜头家族内展开新的候选图。默认是加入候选，不直接替换当前图。
+              基于当前这张图生成更多角度或做单张优化。默认是新增结果，不会直接覆盖当前图片。
             </DialogDescription>
           </DialogHeader>
 
@@ -384,9 +384,9 @@ const CanvasMultiviewGenerator = ({
               </div>
 
               <div className="space-y-2 rounded-xl border border-dashed p-3">
-                <div className="text-sm font-medium">单镜 Refinement</div>
+                <div className="text-sm font-medium">单张优化</div>
                 <div className="text-xs text-muted-foreground">
-                  保持当前 shot continuity，只优化单镜内容，不改变镜头组归属与镜头家族。
+                  保持当前人物、场景和构图逻辑，只优化这一张图本身。
                 </div>
                 <Textarea
                   value={refinePrompt}
@@ -506,9 +506,9 @@ const CanvasMultiviewGenerator = ({
               variant="outline"
               onClick={() => handleGenerateMultiview({ replaceSource: true })}
             >
-              替换当前图
+              直接替换当前图
             </Button>
-            <Button onClick={() => handleGenerateMultiview()}>加入候选</Button>
+            <Button onClick={() => handleGenerateMultiview()}>生成更多角度</Button>
             <Button
               variant="secondary"
               onClick={() =>
@@ -517,7 +517,7 @@ const CanvasMultiviewGenerator = ({
                 })
               }
             >
-              单镜优化
+              单张优化
             </Button>
           </DialogFooter>
         </DialogContent>

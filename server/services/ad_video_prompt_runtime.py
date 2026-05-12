@@ -30,7 +30,7 @@ def _is_text_model_usable(text_model: ModelInfo) -> bool:
 
 
 def _get_default_text_model() -> ModelInfo:
-    preferred_providers = ["apipodcode", "zenlayer", "openai", "ollama"]
+    preferred_providers = ["apipodcode", "openai", "ollama"]
 
     for provider_name in preferred_providers:
         provider_config = config_service.app_config.get(provider_name, {})

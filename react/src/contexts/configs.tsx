@@ -3,14 +3,14 @@ import useConfigsStore from '@/stores/configs'
 import { useQuery } from '@tanstack/react-query'
 import { createContext, useContext, useEffect, useRef } from 'react'
 
-const TOOL_SELECTION_MIGRATION_VERSION = 'apipodvideo-default-v1'
+const TOOL_SELECTION_MIGRATION_VERSION = 'apipodtool-default-v2'
 
 const getPreferredDefaultTools = (toolList: ToolInfo[]): ToolInfo[] => {
   const selected: ToolInfo[] = []
 
   const preferredImageTool =
-    toolList.find((tool) => tool.id === 'generate_image_by_gpt_image_2_zenlayer') ||
-    toolList.find((tool) => tool.provider === 'zenlayer' && tool.type === 'image') ||
+    toolList.find((tool) => tool.id === 'generate_image_by_gpt_image_2_edit_apipod') ||
+    toolList.find((tool) => tool.provider === 'apipodgptimage' && tool.type === 'image') ||
     toolList.find((tool) => tool.type === 'image')
 
   const preferredVideoTool =
@@ -38,7 +38,7 @@ export const ConfigsProvider = ({
 }: {
   children: React.ReactNode
 }) => {
-  const DEFAULT_PROVIDER_PRIORITY = ['apipodcode', 'zenlayer', 'openai', 'ollama']
+  const DEFAULT_PROVIDER_PRIORITY = ['apipodcode', 'openai', 'ollama']
   const configsStore = useConfigsStore()
   const {
     setTextModels,
@@ -73,12 +73,8 @@ export const ConfigsProvider = ({
     const apipodDefaultModel = llmModels.find(
       (m) => m.provider === 'apipodcode' && m.model === 'gpt-5.4'
     )
-    const shouldMigrateStoredTextModel =
-      textModel === 'zenlayer:gpt-5.4' && !!apipodDefaultModel
-
     if (
       textModel &&
-      !shouldMigrateStoredTextModel &&
       llmModels.find((m) => m.provider + ':' + m.model === textModel)
     ) {
       setTextModel(

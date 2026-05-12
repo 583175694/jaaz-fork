@@ -16,7 +16,6 @@ from ..image_providers.openai_provider import OpenAIImageProvider
 from ..image_providers.replicate_provider import ReplicateImageProvider
 from ..image_providers.volces_provider import VolcesProvider
 from ..image_providers.wavespeed_provider import WavespeedProvider
-from ..image_providers.zenlayer_openai_image_provider import ZenlayerOpenAIImageProvider
 from ..image_providers.apipod_gpt_image_provider import APIPodGPTImageProvider
 
 # from ..image_providers.comfyui_provider import ComfyUIProvider
@@ -32,7 +31,6 @@ IMAGE_PROVIDERS: dict[str, ImageProviderBase] = {
     "replicate": ReplicateImageProvider(),
     "volces": VolcesProvider(),
     "wavespeed": WavespeedProvider(),
-    "zenlayer": ZenlayerOpenAIImageProvider(),
     "apipodgptimage": APIPodGPTImageProvider(),
 }
 

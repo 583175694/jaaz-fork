@@ -8,9 +8,9 @@ export const sendDirectStoryboardGenerate = async (payload: {
   referenceImageFileId?: string
   prompt: string
   shotCount: number
-  variantCountPerShot: number
   aspectRatio: string
   imageToolId?: string
+  skipPromptConfirmation?: boolean
 }) => {
   const response = await fetch('/api/direct_storyboard', {
     method: 'POST',
@@ -25,9 +25,9 @@ export const sendDirectStoryboardGenerate = async (payload: {
       reference_image_file_id: payload.referenceImageFileId,
       prompt: payload.prompt,
       shot_count: payload.shotCount,
-      variant_count_per_shot: payload.variantCountPerShot,
       aspect_ratio: payload.aspectRatio,
       image_tool_id: payload.imageToolId,
+      skip_prompt_confirmation: payload.skipPromptConfirmation,
     }),
   })
   if (!response.ok) {

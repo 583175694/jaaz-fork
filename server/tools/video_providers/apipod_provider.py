@@ -17,7 +17,7 @@ from utils.http_client import HttpClient
 from .video_base_provider import VideoProviderBase
 
 
-APIPOD_VIDEO_DEFAULT_MODEL_NAME = "veo3-1-fast"
+APIPOD_VIDEO_DEFAULT_MODEL_NAME = "veo3-1-quality"
 APIPOD_VIDEO_REFERENCE_IMAGES_MAX = 2
 
 
@@ -30,14 +30,14 @@ def get_apipod_video_model_name() -> str:
 
 def apipod_video_supports_multi_reference_images(model_name: str) -> bool:
     normalized = str(model_name or "").strip().lower()
-    return normalized == "veo3-1-fast"
+    return normalized in {"veo3-1-fast", "veo3-1-quality"}
 
 
 def format_apipod_multi_reference_images_not_supported_error(model_name: str) -> str:
     normalized = str(model_name or "").strip() or APIPOD_VIDEO_DEFAULT_MODEL_NAME
     return (
         f"当前配置的视频模型 `{normalized}` 不支持多张参考图。"
-        "请切换到 `veo3-1-fast`，以使用最多 2 张参考图生成 1 个视频。"
+        "请切换到 `veo3-1-quality` 或 `veo3-1-fast`，以使用最多 2 张参考图生成 1 个视频。"
     )
 
 
@@ -227,7 +227,7 @@ def _extract_video_url(result: dict[str, Any]) -> str:
 
 
 class APIPodVideoProvider(VideoProviderBase, provider_name="apipodvideo"):
-    """APIPod Google Veo 3.1 Fast provider."""
+    """APIPod Google Veo 3.1 provider."""
 
     def __init__(self):
         config = config_service.app_config.get("apipodvideo", {})

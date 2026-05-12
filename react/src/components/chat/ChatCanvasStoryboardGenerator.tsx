@@ -82,20 +82,7 @@ const ChatCanvasStoryboardGenerator: React.FC<
           content: [
             {
               type: 'text',
-              text:
-                '请基于当前选中的主图扩展电影感分镜，并保持主体身份、服装、产品形态、场景氛围与灯光连续。首轮每镜先生成 1 个主镜头，要求镜头之间有明确的景别、机位或视线差异。\n' +
-                `<task>main-image-to-storyboard</task>\n` +
-                `<main_image canvas_file_id="${resolvedImage.canvasFileId}" reference_file_id="${resolvedImage.referenceImageFileId}" />\n` +
-                `<shot_count>${data.shotCount}</shot_count>\n` +
-                `<variant_count_per_shot>${data.variantCountPerShot}</variant_count_per_shot>\n` +
-                `<aspect_ratio>${data.aspectRatio}</aspect_ratio>\n` +
-                `<prompt>${data.prompt || '基于主图自动扩展分镜'}</prompt>`,
-            },
-            {
-              type: 'image_url',
-              image_url: {
-                url: resolvedImage.imageUrl,
-              },
+              text: data.finalPrompt,
             },
           ],
         }
@@ -110,11 +97,11 @@ const ChatCanvasStoryboardGenerator: React.FC<
           newMessages,
           mainImageFileId: resolvedImage.canvasFileId,
           referenceImageFileId: resolvedImage.referenceImageFileId,
-          prompt: data.prompt,
+          prompt: data.finalPrompt,
           shotCount: data.shotCount,
-          variantCountPerShot: data.variantCountPerShot,
           aspectRatio: data.aspectRatio,
           imageToolId,
+          skipPromptConfirmation: true,
         })
 
         window.dispatchEvent(
