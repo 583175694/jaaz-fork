@@ -98,10 +98,12 @@ if __name__ == "__main__":
         sorted(_bypass | current - {""}))
 
     parser = argparse.ArgumentParser()
+    parser.add_argument('--host', default=os.environ.get("HOST", "127.0.0.1"),
+                        help='Host to bind the server to')
     parser.add_argument('--port', type=int, default=57988,
                         help='Port to run the server on')
     args = parser.parse_args()
     import uvicorn
     print("🌟Starting server, UI_DIST_DIR:", os.environ.get('UI_DIST_DIR'))
 
-    uvicorn.run(socket_app, host="127.0.0.1", port=args.port)
+    uvicorn.run(socket_app, host=args.host, port=args.port)

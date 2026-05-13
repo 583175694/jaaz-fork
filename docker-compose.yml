@@ -1,0 +1,39 @@
+services:
+  jaaz:
+    build:
+      context: .
+      args:
+        DEBIAN_MIRROR: ${DEBIAN_MIRROR:-https://mirrors.aliyun.com/debian}
+        DEBIAN_SECURITY_MIRROR: ${DEBIAN_SECURITY_MIRROR:-https://mirrors.aliyun.com/debian-security}
+        NPM_CONFIG_REGISTRY: ${NPM_CONFIG_REGISTRY:-https://registry.npmmirror.com}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-pypi.tuna.tsinghua.edu.cn}
+        VITE_JAAZ_BASE_API_URL: ${VITE_JAAZ_BASE_API_URL:-}
+    image: jaaz-fork:latest
+    container_name: jaaz
+    restart: unless-stopped
+    ports:
+      - "${JAAZ_PORT:-8080}:57988"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 57988
+      DEFAULT_PORT: 57988
+      USER_DATA_DIR: /data
+      CONFIG_PATH: /data/config.toml
+      UI_DIST_DIR: /app/react/dist
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
+      NO_PROXY: 127.0.0.1,localhost,::1,host.docker.internal
+      no_proxy: 127.0.0.1,localhost,::1,host.docker.internal
+    volumes:
+      - jaaz-data:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:57988/api/list_models >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+volumes:
+  jaaz-data:
