@@ -142,11 +142,26 @@ def compress_image(img: Image.Image, max_size_mb: float) -> bytes:
     return buffer.getvalue()
 
 
-# 文件下载接口
-@router.get("/file/{file_id}")
-async def get_file(file_id: str):
-    file_path = os.path.join(FILES_DIR, f'{file_id}')
+def _get_safe_file_path(file_id: str) -> str:
+    if not file_id or file_id != os.path.basename(file_id):
+        raise HTTPException(status_code=400, detail="Invalid file id")
+    return os.path.join(FILES_DIR, file_id)
+
+
+async def _serve_file(file_id: str):
+    file_path = _get_safe_file_path(file_id)
     print('🦄get_file file_path', file_path)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(file_path)
+
+
+# 文件下载接口
+@router.get("/file/{file_id}.{extension}")
+async def get_file_with_extension(file_id: str, extension: str):
+    return await _serve_file(f"{file_id}.{extension}")
+
+
+@router.get("/file/{file_id}")
+async def get_file(file_id: str):
+    return await _serve_file(file_id)
