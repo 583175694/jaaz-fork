@@ -1,6 +1,9 @@
 import UpdateNotificationDialog from '@/components/common/UpdateNotificationDialog'
 import { ThemeProvider } from '@/components/theme/ThemeProvider'
 import { ConfigsProvider } from '@/contexts/configs'
+import { AuthProvider, useAuth } from '@/contexts/AuthContext'
+import { SocketProvider } from '@/contexts/socket'
+import PasswordGate from '@/components/auth/PasswordGate'
 import { useTheme } from '@/hooks/use-theme'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
@@ -68,17 +71,35 @@ function App() {
         client={queryClient}
         persistOptions={{ persister }}
       >
-        <ConfigsProvider>
-          <div className="app-container">
-            <RouterProvider router={router} />
-
-            {/* Update Notification Dialog */}
-            <UpdateNotificationDialog />
-          </div>
-        </ConfigsProvider>
+        <AuthProvider>
+          <AuthenticatedApp />
+        </AuthProvider>
       </PersistQueryClientProvider>
       <Toaster position="bottom-center" richColors />
     </ThemeProvider>
+  )
+}
+
+function AuthenticatedApp() {
+  const { authStatus, isLoading } = useAuth()
+
+  if (isLoading) {
+    return <div className="min-h-screen bg-background" />
+  }
+
+  if (authStatus.auth_required && !authStatus.authenticated) {
+    return <PasswordGate />
+  }
+
+  return (
+    <SocketProvider>
+      <ConfigsProvider>
+        <div className="app-container">
+          <RouterProvider router={router} />
+          <UpdateNotificationDialog />
+        </div>
+      </ConfigsProvider>
+    </SocketProvider>
   )
 }
 

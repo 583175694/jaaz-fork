@@ -7,7 +7,7 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 print('Importing websocket_router')
 from routers.websocket_router import *  # DO NOT DELETE THIS LINE, OTHERWISE, WEBSOCKET WILL NOT WORK
 print('Importing routers')
-from routers import config_router, image_router, root_router, workspace, canvas, chat_router, settings, tool_confirmation, production_workflow
+from routers import auth_router, config_router, image_router, root_router, workspace, canvas, chat_router, settings, tool_confirmation, production_workflow
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi import FastAPI
@@ -22,6 +22,7 @@ print('Importing websocket_service')
 from services.websocket_service import broadcast_init_done
 print('Importing config_service')
 from services.config_service import config_service
+from services.auth_service import AuthMiddleware
 print('Importing tool_service')
 from services.tool_service import tool_service
 
@@ -44,9 +45,11 @@ async def lifespan(app: FastAPI):
 
 print('Creating FastAPI app')
 app = FastAPI(lifespan=lifespan)
+app.add_middleware(AuthMiddleware)
 
 # Include routers
 print('Including routers')
+app.include_router(auth_router.router)
 app.include_router(config_router.router)
 app.include_router(settings.router)
 app.include_router(root_router.router)
@@ -108,6 +111,11 @@ async def serve_unicorn_logo():
 
 @app.get("/")
 async def serve_react_app():
+    return no_cache_file_response(os.path.join(react_build_dir, "index.html"))
+
+
+@app.get("/{full_path:path}")
+async def serve_react_app_fallback(full_path: str):
     return no_cache_file_response(os.path.join(react_build_dir, "index.html"))
 
 print('Creating socketio app')

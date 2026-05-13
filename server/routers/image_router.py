@@ -3,6 +3,7 @@ from fastapi.concurrency import run_in_threadpool
 from common import DEFAULT_PORT
 from tools.utils.image_canvas_utils import generate_file_id
 from services.config_service import FILES_DIR
+from services.storage_service import storage_service
 
 from PIL import Image
 from io import BytesIO
@@ -85,11 +86,20 @@ async def upload_image(file: UploadFile = File(...), max_size_mb: float = 3.0):
             # img.save(file_path, format=save_format)
             await run_in_threadpool(img.save, file_path, format=save_format)
 
+    serving_url = await run_in_threadpool(
+        storage_service.upload_local_file,
+        file_path,
+        f'{file_id}.{extension}',
+        guess_type(f'{file_id}.{extension}')[0],
+    )
+    if not serving_url:
+        serving_url = f'/api/file/{file_id}.{extension}'
+
     # 返回文件信息
     print('🦄upload_image file_path', file_path)
     return {
         'file_id': f'{file_id}.{extension}',
-        'url': f'http://localhost:{DEFAULT_PORT}/api/file/{file_id}.{extension}',
+        'url': serving_url,
         'width': width,
         'height': height,
     }

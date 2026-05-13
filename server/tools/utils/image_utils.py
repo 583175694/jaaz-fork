@@ -178,6 +178,9 @@ async def process_input_image(
         return None
 
     try:
+        if input_image.startswith(("http://", "https://")):
+            return input_image
+
         resolved_input_image = input_image
         full_path = os.path.join(FILES_DIR, resolved_input_image)
         if not os.path.exists(full_path):
@@ -185,6 +188,8 @@ async def process_input_image(
                 resolved_input_image,
                 canvas_id,
             ) or resolved_input_image
+            if resolved_input_image.startswith(("http://", "https://")):
+                return resolved_input_image
             full_path = os.path.join(FILES_DIR, resolved_input_image)
 
         if not os.path.exists(full_path):

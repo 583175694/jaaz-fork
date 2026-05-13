@@ -1,76 +1,55 @@
 export interface AuthStatus {
-  status: 'logged_out' | 'pending' | 'logged_in'
+  authenticated: boolean
+  auth_required: boolean
+  status: 'logged_out' | 'logged_in'
   is_logged_in: boolean
-  user_info?: UserInfo
-  tokenExpired?: boolean
-}
-
-export interface UserInfo {
-  id: string
-  username: string
-  email: string
-  image_url?: string
-  provider?: string
-  created_at?: string
-  updated_at?: string
-}
-
-export interface DeviceAuthResponse {
-  status: string
-  code: string
-  expires_at: string
-  message: string
-}
-
-export interface DeviceAuthPollResponse {
-  status: 'pending' | 'authorized' | 'expired' | 'error'
-  message?: string
-  token?: string
-  user_info?: UserInfo
-}
-
-export interface ApiResponse {
-  status: string
-  message: string
-}
-
-export async function startDeviceAuth(): Promise<DeviceAuthResponse> {
-  throw new Error('Authentication is disabled in this build')
-}
-
-export async function pollDeviceAuth(
-  _deviceCode: string
-): Promise<DeviceAuthPollResponse> {
-  return {
-    status: 'error',
-    message: 'Authentication is disabled in this build',
-  }
 }
 
 export async function getAuthStatus(): Promise<AuthStatus> {
+  const response = await fetch('/api/auth/status', {
+    credentials: 'same-origin',
+  })
+  if (!response.ok) {
+    throw new Error('Failed to check authentication status')
+  }
+  const data = await response.json()
+  const authenticated = Boolean(data.authenticated)
   return {
-    status: 'logged_out',
-    is_logged_in: false,
+    authenticated,
+    auth_required: Boolean(data.auth_required),
+    status: authenticated ? 'logged_in' : 'logged_out',
+    is_logged_in: authenticated,
+  }
+}
+
+export async function loginWithPassword(password: string): Promise<AuthStatus> {
+  const response = await fetch('/api/auth/login', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ password }),
+  })
+  if (!response.ok) {
+    throw new Error('密码不正确')
+  }
+  const data = await response.json()
+  const authenticated = Boolean(data.authenticated)
+  return {
+    authenticated,
+    auth_required: Boolean(data.auth_required),
+    status: authenticated ? 'logged_in' : 'logged_out',
+    is_logged_in: authenticated,
   }
 }
 
 export async function logout(): Promise<{ status: string; message: string }> {
-  return {
-    status: 'success',
-    message: 'Authentication is disabled in this build',
-  }
-}
-
-export async function getUserProfile(): Promise<UserInfo> {
-  throw new Error('Authentication is disabled in this build')
-}
-
-export function saveAuthData(_token: string, _userInfo: UserInfo) {
-  return
-}
-
-export function getAccessToken(): string | null {
-  return null
+  await fetch('/api/auth/logout', {
+    method: 'POST',
+    credentials: 'same-origin',
+  })
+  return { status: 'success', message: 'Logged out' }
 }
 
 export async function authenticatedFetch(
@@ -84,10 +63,7 @@ export async function authenticatedFetch(
 
   return fetch(url, {
     ...options,
+    credentials: options.credentials || 'same-origin',
     headers,
   })
-}
-
-export async function refreshToken(_currentToken: string) {
-  throw new Error('Authentication is disabled in this build')
 }

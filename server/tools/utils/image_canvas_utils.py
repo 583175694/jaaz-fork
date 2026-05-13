@@ -4,6 +4,8 @@ Handles canvas operations, locking, and notifications
 """
 
 import asyncio
+import mimetypes
+import os
 import random
 import time
 import json
@@ -11,6 +13,8 @@ from contextlib import asynccontextmanager
 from typing import Dict, List, Any, Optional, Union, cast
 from nanoid import generate
 from services.db_service import db_service
+from services.config_service import FILES_DIR
+from services.storage_service import storage_service
 from services.websocket_service import broadcast_session_update
 from services.websocket_service import send_to_websocket
 from utils.canvas import find_next_best_element_position
@@ -18,6 +22,24 @@ from utils.canvas import find_next_best_element_position
 def generate_file_id() -> str:
     """Generate unique file ID"""
     return 'im_' + generate(size=8)
+
+
+def _get_serving_url(filename: str) -> str:
+    local_url = f"/api/file/{filename}"
+    local_path = os.path.join(FILES_DIR, filename)
+    if not os.path.exists(local_path):
+        return local_url
+
+    try:
+        cos_url = storage_service.upload_local_file(
+            local_path,
+            filename,
+            content_type=mimetypes.guess_type(filename)[0],
+        )
+        return cos_url or local_url
+    except Exception as exc:
+        print(f"Warning: failed to upload image to COS: {exc}")
+        return local_url
 
 
 class CanvasLockManager:
@@ -132,7 +154,7 @@ async def save_image_to_canvas(
             canvas_data['files'] = {}
 
         file_id = generate_file_id()
-        url = f'/api/file/{filename}'
+        url = _get_serving_url(filename)
 
         file_data: Dict[str, Any] = {
             'mimeType': mime_type,
@@ -161,7 +183,7 @@ async def save_image_to_canvas(
         elements_list.append(new_image_element)
         canvas_data['files'][file_id] = file_data
 
-        image_url = f"/api/file/{filename}"
+        image_url = url
 
         # Save the updated canvas data back to the database
         await db_service.save_canvas_data(canvas_id, json.dumps(canvas_data))
