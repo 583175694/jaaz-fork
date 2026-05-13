@@ -145,7 +145,18 @@ def compress_image(img: Image.Image, max_size_mb: float) -> bytes:
 def _get_safe_file_path(file_id: str) -> str:
     if not file_id or file_id != os.path.basename(file_id):
         raise HTTPException(status_code=400, detail="Invalid file id")
-    return os.path.join(FILES_DIR, file_id)
+
+    file_path = os.path.join(FILES_DIR, file_id)
+    if os.path.exists(file_path):
+        return file_path
+
+    if "." not in file_id:
+        for extension in ("png", "jpg", "jpeg", "webp", "gif", "mp4"):
+            candidate_path = os.path.join(FILES_DIR, f"{file_id}.{extension}")
+            if os.path.exists(candidate_path):
+                return candidate_path
+
+    return file_path
 
 
 async def _serve_file(file_id: str):
