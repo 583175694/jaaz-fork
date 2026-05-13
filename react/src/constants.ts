@@ -10,10 +10,10 @@ export const PROVIDER_NAME_MAPPING: {
 } = {
   apipodcode: {
     name: 'APIPodCode',
-    icon: '/app-logo.svg',
+    icon: '/app-logo.png',
   },
-  apipodgptimage: { name: 'APIPod Images', icon: '/app-logo.svg' },
-  apipodvideo: { name: 'APIPod Video', icon: '/app-logo.svg' },
+  apipodgptimage: { name: 'APIPod Images', icon: '/app-logo.png' },
+  apipodvideo: { name: 'APIPod Video', icon: '/app-logo.png' },
 }
 
 // Tool call name mapping
@@ -32,7 +32,7 @@ export const TOOL_CALL_NAME_MAPPING: { [key in ToolCallFunctionName]: string } =
 ;(TOOL_CALL_NAME_MAPPING as Record<string, string>)['generate_video_by_veo3_apipod'] =
   'Google Veo 3.1'
 
-export const LOGO_URL = '/app-logo.svg'
+export const LOGO_URL = '/app-logo.png'
 
 export const DEFAULT_SYSTEM_PROMPT = `You are a professional art design agent. You can write very professional image prompts to generate aesthetically pleasing images that best fulfilling and matching the user's request.
 Step 1. write a design strategy plan. Write in the same language as the user's inital first prompt.

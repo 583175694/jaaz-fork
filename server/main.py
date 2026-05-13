@@ -86,8 +86,13 @@ def no_cache_file_response(file_path: str) -> FileResponse:
     return response
 
 
+@app.get("/app-logo.png")
+async def serve_app_logo_png():
+    return no_cache_file_response(os.path.join(react_build_dir, "app-logo.png"))
+
+
 @app.get("/app-logo.svg")
-async def serve_app_logo():
+async def serve_app_logo_svg():
     return no_cache_file_response(os.path.join(react_build_dir, "app-logo.svg"))
 
 
