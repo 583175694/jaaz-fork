@@ -12,6 +12,7 @@ import aiohttp
 import toml
 
 from services.config_service import FILES_DIR, config_service
+from services.storage_service import storage_service
 from utils.http_client import HttpClient
 
 from .video_base_provider import VideoProviderBase
@@ -51,6 +52,54 @@ def _decode_data_url(data_url: str) -> tuple[bytes, str]:
 
 async def _upload_data_url_to_public_url(data_url: str, filename: str) -> str:
     image_bytes, mime_type = _decode_data_url(data_url)
+    cos_url = _upload_reference_bytes_to_cos(image_bytes, filename, mime_type)
+    if cos_url:
+        return cos_url
+
+    return await _upload_reference_bytes_to_temporary_public_url(
+        image_bytes,
+        filename,
+        mime_type,
+    )
+
+
+def _upload_reference_bytes_to_cos(
+    image_bytes: bytes,
+    filename: str,
+    mime_type: str,
+) -> str | None:
+    try:
+        return storage_service.upload_bytes(
+            image_bytes,
+            filename,
+            content_type=mime_type,
+        )
+    except Exception as exc:
+        print(f"Warning: failed to upload APIPod reference image to COS: {exc}")
+        return None
+
+
+def _upload_reference_file_to_cos(
+    local_path: str,
+    filename: str,
+    mime_type: str,
+) -> str | None:
+    try:
+        return storage_service.upload_local_file(
+            local_path,
+            filename,
+            content_type=mime_type,
+        )
+    except Exception as exc:
+        print(f"Warning: failed to upload APIPod reference file to COS: {exc}")
+        return None
+
+
+async def _upload_reference_bytes_to_temporary_public_url(
+    image_bytes: bytes,
+    filename: str,
+    mime_type: str,
+) -> str:
     async with HttpClient.create_aiohttp() as session:
         catbox_form = aiohttp.FormData()
         catbox_form.add_field("reqtype", "fileupload")
@@ -101,6 +150,21 @@ async def _upload_data_url_to_public_url(data_url: str, filename: str) -> str:
     return page_url.replace("http://tmpfiles.org/", "https://tmpfiles.org/dl/")
 
 
+async def _upload_reference_file_to_temporary_public_url(
+    local_path: str,
+    filename: str,
+    mime_type: str,
+) -> str:
+    with open(local_path, "rb") as file_obj:
+        file_bytes = file_obj.read()
+
+    return await _upload_reference_bytes_to_temporary_public_url(
+        file_bytes,
+        filename,
+        mime_type,
+    )
+
+
 async def _prepare_public_reference_images(
     input_images: Optional[list[str]],
 ) -> list[str]:
@@ -129,57 +193,22 @@ async def _prepare_public_reference_images(
         full_path = os.path.join(FILES_DIR, image_value)
         if os.path.exists(full_path):
             guessed_mime_type = mimetypes.guess_type(full_path)[0] or "application/octet-stream"
-            async with HttpClient.create_aiohttp() as session:
-                with open(full_path, "rb") as file_obj:
-                    file_bytes = file_obj.read()
+            filename = os.path.basename(full_path)
+            cos_url = _upload_reference_file_to_cos(
+                full_path,
+                filename,
+                guessed_mime_type,
+            )
+            if cos_url:
+                normalized.append(cos_url)
+                continue
 
-                    catbox_form = aiohttp.FormData()
-                    catbox_form.add_field("reqtype", "fileupload")
-                    catbox_form.add_field(
-                        "fileToUpload",
-                        file_bytes,
-                        filename=os.path.basename(full_path),
-                        content_type=guessed_mime_type,
-                    )
-                    async with session.post(
-                        "https://catbox.moe/user/api.php",
-                        data=catbox_form,
-                    ) as response:
-                        text = await response.text()
-
-                    if response.status < 400:
-                        normalized_text = str(text or "").strip()
-                        if normalized_text.startswith("https://files.catbox.moe/"):
-                            normalized.append(normalized_text)
-                            continue
-
-                    tmpfiles_form = aiohttp.FormData()
-                    tmpfiles_form.add_field(
-                        "file",
-                        file_bytes,
-                        filename=os.path.basename(full_path),
-                        content_type=guessed_mime_type,
-                    )
-                    async with session.post(
-                        "https://tmpfiles.org/api/v1/upload",
-                        data=tmpfiles_form,
-                    ) as response:
-                        text = await response.text()
-
-            if response.status >= 400:
-                raise RuntimeError(
-                    "APIPod video source upload failed "
-                    f"status={response.status} body={text[:500]}"
-                )
-
-            result = json.loads(text)
-            page_url = result.get("data", {}).get("url", "")
-            if not page_url:
-                raise RuntimeError(
-                    f"APIPod video source upload missing url body={text[:500]}"
-                )
             normalized.append(
-                page_url.replace("http://tmpfiles.org/", "https://tmpfiles.org/dl/")
+                await _upload_reference_file_to_temporary_public_url(
+                    full_path,
+                    filename,
+                    guessed_mime_type,
+                )
             )
             continue
 
