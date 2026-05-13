@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from typing import Dict, List, Any, Tuple, Optional, Union
 from services.config_service import FILES_DIR
 from services.config_service import config_service
+from services.storage_service import storage_service
 from services.db_service import db_service
 from services.websocket_service import send_to_websocket, broadcast_session_update  # type: ignore
 from common import DEFAULT_PORT
@@ -74,12 +75,12 @@ async def save_video_to_canvas(
             headers=download_headers,
         )
         filename = f"{video_id}.{extension}"
+        file_url = _get_serving_url(filename)
 
         print(f"🎥 Video saved as: {filename}, dimensions: {width}x{height}")
 
         # Create file data
         file_id = generate_video_file_id()
-        file_url = f"/api/file/{filename}"
 
         file_data: Dict[str, Any] = {
             "mimeType": mime_type,
@@ -170,9 +171,28 @@ async def send_video_error_notification(session_id: str, error_message: str) -> 
     })
 
 
-def format_video_success_message(filename: str) -> str:
+def _get_serving_url(filename: str) -> str:
+    local_url = f"/api/file/{filename}"
+    local_path = os.path.join(FILES_DIR, filename)
+    if not os.path.exists(local_path):
+        return local_url
+
+    try:
+        cos_url = storage_service.upload_local_file(
+            local_path,
+            filename,
+            content_type=mimetypes.guess_type(filename)[0],
+        )
+        return cos_url or local_url
+    except Exception as exc:
+        print(f"Warning: failed to upload video to COS: {exc}")
+        return local_url
+
+
+def format_video_success_message(filename: str, file_url: str | None = None) -> str:
     """Format success message for video generation"""
-    return f"video generated successfully ![video_id: {filename}](http://localhost:{DEFAULT_PORT}/api/file/{filename})"
+    url = file_url or f"http://localhost:{DEFAULT_PORT}/api/file/{filename}"
+    return f"video generated successfully ![video_id: {filename}]({url})"
 
 
 async def process_video_result(
@@ -216,7 +236,7 @@ async def process_video_result(
 
         provider_info = f" using {provider_name}" if provider_name else ""
         print(f"🎥 Video generation completed{provider_info}: {filename}")
-        return format_video_success_message(filename)
+        return format_video_success_message(filename, file_data["dataURL"])
 
     except Exception as e:
         error_message = str(e)

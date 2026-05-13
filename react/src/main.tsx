@@ -1,4 +1,3 @@
-import { SocketProvider } from '@/contexts/socket'
 import { StrictMode } from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
@@ -15,9 +14,7 @@ if (!rootElement.innerHTML) {
   const root = ReactDOM.createRoot(rootElement)
   const app = (
     <StrictMode>
-      <SocketProvider>
-        <App />
-      </SocketProvider>
+      <App />
     </StrictMode>
   )
 
