@@ -90,5 +90,28 @@ class StorageService:
         )
         return self.build_public_url(key)
 
+    def upload_bytes(
+        self,
+        data: bytes,
+        filename: str,
+        content_type: str | None = None,
+    ) -> str | None:
+        if not self.cos_config:
+            return None
+
+        key = self.build_object_key(filename)
+        client = _create_cos_client(self.cos_config)
+        put_object_kwargs = {
+            "Bucket": self.cos_config.bucket,
+            "Key": key,
+            "Body": data,
+            "EnableMD5": True,
+        }
+        if content_type:
+            put_object_kwargs["ContentType"] = content_type
+
+        client.put_object(**put_object_kwargs)
+        return self.build_public_url(key)
+
 
 storage_service = StorageService()

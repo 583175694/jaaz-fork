@@ -74,3 +74,35 @@ def test_upload_uses_configured_cos_key_and_returns_public_url(monkeypatch, tmp_
             "EnableMD5": True,
         }
     ]
+
+
+def test_upload_bytes_uses_configured_cos_key_and_returns_public_url(monkeypatch):
+    storage_service = _load_storage(monkeypatch, configured=True)
+    calls = []
+
+    class FakeClient:
+        def put_object(self, **kwargs):
+            calls.append(kwargs)
+            return {"ETag": '"etag"'}
+
+    monkeypatch.setattr(storage_service, "_create_cos_client", lambda _config: FakeClient())
+
+    result = storage_service.storage_service.upload_bytes(
+        b"png",
+        "apipod_video_ref_1.png",
+        content_type="image/png",
+    )
+
+    assert result == (
+        "https://hello-agent-1256175414.cos.ap-guangzhou.myqcloud.com/"
+        "generated/apipod_video_ref_1.png"
+    )
+    assert calls == [
+        {
+            "Bucket": "hello-agent-1256175414",
+            "Key": "generated/apipod_video_ref_1.png",
+            "Body": b"png",
+            "EnableMD5": True,
+            "ContentType": "image/png",
+        }
+    ]
