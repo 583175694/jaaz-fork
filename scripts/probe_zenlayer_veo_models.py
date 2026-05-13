@@ -102,7 +102,7 @@ def main() -> int:
     parser.add_argument(
         "--config",
         default="server/user_data/config.toml",
-        help="Path to local Jaaz config.toml",
+        help="Path to local AI Studio config.toml",
     )
     parser.add_argument(
         "--models",

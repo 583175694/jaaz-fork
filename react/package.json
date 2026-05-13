@@ -1,5 +1,5 @@
 {
-  "name": "@jaaz/agent-ui",
+  "name": "@ai-studio/agent-ui",
   "version": "0.0.0",
   "type": "module",
   "main": "dist/index.es.js",

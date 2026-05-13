@@ -9,7 +9,7 @@ set_default_openai_key(str(api_key))
 
 
 
-async def create_magic_response():
+async def create_response():
     intent_agent = Agent(
         name="Intent Agent",
         instructions="You are a helpful assistant that can analyze images and provide a summary of the content.",
@@ -21,8 +21,7 @@ async def create_magic_response():
 
 
 if __name__ == "__main__":
-    asyncio.run(create_magic_response())
-
+    asyncio.run(create_response())
 
 
 

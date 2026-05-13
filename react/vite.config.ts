@@ -38,7 +38,7 @@ export default defineConfig(({ mode }) => {
     config.build = {
       lib: {
         entry: path.resolve(__dirname, 'src/index.ts'),
-        name: '@jaaz/agent-ui',
+        name: '@ai-studio/agent-ui',
         fileName: (format: string) => `index.${format}.js`,
         formats: ['es'],
       },

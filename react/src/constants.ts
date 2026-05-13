@@ -1,45 +1,19 @@
 import type { LLMConfig, ToolCallFunctionName } from '@/types/types'
 
 // API Configuration
-export const BASE_API_URL =
-  import.meta.env.VITE_JAAZ_BASE_API_URL || 'https://jaaz.app'
+export const APP_NAME = 'AI Studio'
+export const APP_STORAGE_PREFIX = 'ai_studio'
+export const BASE_API_URL = import.meta.env.VITE_BASE_API_URL || ''
 
 export const PROVIDER_NAME_MAPPING: {
   [key: string]: { name: string; icon: string }
 } = {
   apipodcode: {
     name: 'APIPodCode',
-    icon: 'https://openai.com/favicon.ico',
+    icon: '/app-logo.svg',
   },
-  anthropic: {
-    name: 'Claude',
-    icon: 'https://registry.npmmirror.com/@lobehub/icons-static-png/latest/files/dark/claude-color.png',
-  },
-  openai: { name: 'OpenAI', icon: 'https://openai.com/favicon.ico' },
-  replicate: {
-    name: 'Replicate',
-    icon: 'https://images.seeklogo.com/logo-png/61/1/replicate-icon-logo-png_seeklogo-611690.png',
-  },
-  ollama: {
-    name: 'Ollama',
-    icon: 'https://images.seeklogo.com/logo-png/59/1/ollama-logo-png_seeklogo-593420.png',
-  },
-  huggingface: {
-    name: 'Hugging Face',
-    icon: 'https://huggingface.co/favicon.ico',
-  },
-  wavespeed: {
-    name: 'WaveSpeedAi',
-    icon: 'https://www.wavespeed.ai/favicon.ico',
-  },
-  volces: {
-    name: 'Volces',
-    icon: 'https://portal.volccdn.com/obj/volcfe/misc/favicon.png',
-  },
-  comfyui: {
-    name: 'ComfyUI',
-    icon: 'https://framerusercontent.com/images/3cNQMWKzIhIrQ5KErBm7dSmbd2w.png',
-  },
+  apipodgptimage: { name: 'APIPod Images', icon: '/app-logo.svg' },
+  apipodvideo: { name: 'APIPod Video', icon: '/app-logo.svg' },
 }
 
 // Tool call name mapping
@@ -58,7 +32,7 @@ export const TOOL_CALL_NAME_MAPPING: { [key in ToolCallFunctionName]: string } =
 ;(TOOL_CALL_NAME_MAPPING as Record<string, string>)['generate_video_by_veo3_apipod'] =
   'Google Veo 3.1'
 
-export const LOGO_URL = 'https://jaaz.app/favicon.ico'
+export const LOGO_URL = '/app-logo.svg'
 
 export const DEFAULT_SYSTEM_PROMPT = `You are a professional art design agent. You can write very professional image prompts to generate aesthetically pleasing images that best fulfilling and matching the user's request.
 Step 1. write a design strategy plan. Write in the same language as the user's inital first prompt.

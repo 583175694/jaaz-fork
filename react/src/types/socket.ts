@@ -6,6 +6,7 @@ export enum SessionEventType {
   Error = 'error',
   Done = 'done',
   Info = 'info',
+  VideoGenerationStarted = 'video_generation_started',
   ImageGenerated = 'image_generated',
   VideoGenerated = 'video_generated',
   Delta = 'delta',
@@ -102,6 +103,7 @@ export type SessionUpdateEvent =
   | SessionToolCallEvent
   | SessionToolCallArgumentsEvent
   | SessionToolCallProgressEvent
+  | SessionVideoGenerationStartedEvent
   | SessionImageGeneratedEvent
   | SessionVideoGeneratedEvent
   | SessionAllMessagesEvent
@@ -112,3 +114,8 @@ export type SessionUpdateEvent =
   | SessionToolCallPendingConfirmationEvent
   | SessionToolCallConfirmedEvent
   | SessionToolCallCancelledEvent
+
+export interface SessionVideoGenerationStartedEvent extends SessionBaseEvent {
+  type: SessionEventType.VideoGenerationStarted
+  message?: string
+}

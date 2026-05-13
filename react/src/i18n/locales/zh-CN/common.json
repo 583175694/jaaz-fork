@@ -58,28 +58,6 @@
     "installButton": "安装更新",
     "installing": "正在安装..."
   },
-  "auth": {
-    "login": "登录",
-    "logout": "退出登录",
-    "loginToJaaz": "登录到 Jaaz",
-    "myAccount": "我的账户",
-    "loginDescription": "登录后可以使用云端 AI 模型",
-    "startLogin": "开始登录",
-    "preparingLogin": "准备登录中...",
-    "cancel": "取消",
-    "loginSuccessMessage": "登录成功！",
-    "authExpiredMessage": "授权已过期，请重新登录",
-    "authErrorMessage": "检查授权状态时发生错误",
-    "waitingForBrowser": "等待浏览器中完成登录...",
-    "pollErrorMessage": "检查登录状态失败，请重试",
-    "preparingLoginMessage": "正在准备登录...",
-    "browserLoginMessage": "请在浏览器中完成登录",
-    "loginRequestFailed": "登录请求失败，请重试",
-    "logoutSuccessMessage": "已成功登出",
-    "notLoggedIn": "未登录",
-    "balance": "余额",
-    "recharge": "充值"
-  },
   "socket": {
     "connectionError": "连接错误 ({{current}}/{{max}}): {{error}}",
     "maxRetriesReached": "连接失败，请重启应用重试"

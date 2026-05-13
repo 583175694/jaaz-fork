@@ -22,7 +22,7 @@
     "nothingSelected": "未选择任何素材",
     "exportingAssets": "导出素材中...",
     "failedToExportImages": "导出图片失败",
-    "gptImagePermissionRequired": "您必须启用 gpt-image-1 模型权限才能使用此功能！"
+    "gptImagePermissionRequired": "当前无法使用图像生成，请检查内置 APIPod 图片配置。"
   },
   "deleteDialog": {
     "title": "删除画布",
@@ -44,7 +44,7 @@
   },
   "popbar": {
     "addToChat": "添加到聊天",
-    "magicGenerate": "✨ GPT 图像重绘",
+    "magicGenerate": "✨ 图像重绘",
     "generateVideo": "🎬 生成视频"
   },
   "myAssets": "我的素材",

@@ -7,7 +7,7 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 print('Importing websocket_router')
 from routers.websocket_router import *  # DO NOT DELETE THIS LINE, OTHERWISE, WEBSOCKET WILL NOT WORK
 print('Importing routers')
-from routers import config_router, image_router, root_router, workspace, canvas, ssl_test, chat_router, settings, tool_confirmation, production_workflow
+from routers import config_router, image_router, root_router, workspace, canvas, chat_router, settings, tool_confirmation, production_workflow
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi import FastAPI
@@ -53,7 +53,6 @@ app.include_router(root_router.router)
 app.include_router(canvas.router)
 app.include_router(workspace.router)
 app.include_router(image_router.router)
-app.include_router(ssl_test.router)
 app.include_router(chat_router.router)
 app.include_router(tool_confirmation.router)
 app.include_router(production_workflow.router)
@@ -91,7 +90,7 @@ print('Creating socketio app')
 socket_app = socketio.ASGIApp(sio, other_asgi_app=app, socketio_path='/socket.io')
 
 if __name__ == "__main__":
-    # bypass localhost request for proxy, fix ollama proxy issue
+    # bypass localhost request for proxy so local API traffic is not routed externally
     _bypass = {"127.0.0.1", "localhost", "::1"}
     current = set(os.environ.get("no_proxy", "").split(",")) | set(
         os.environ.get("NO_PROXY", "").split(","))

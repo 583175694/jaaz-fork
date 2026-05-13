@@ -1,9 +1,7 @@
 import { listModels, ModelInfo, ToolInfo } from '@/api/model'
 import useConfigsStore from '@/stores/configs'
 import { useQuery } from '@tanstack/react-query'
-import { createContext, useContext, useEffect, useRef } from 'react'
-
-const TOOL_SELECTION_MIGRATION_VERSION = 'apipodtool-default-v2'
+import { createContext, useContext, useEffect } from 'react'
 
 const getPreferredDefaultTools = (toolList: ToolInfo[]): ToolInfo[] => {
   const selected: ToolInfo[] = []
@@ -38,27 +36,22 @@ export const ConfigsProvider = ({
 }: {
   children: React.ReactNode
 }) => {
-  const DEFAULT_PROVIDER_PRIORITY = ['apipodcode', 'openai', 'ollama']
   const configsStore = useConfigsStore()
   const {
     setTextModels,
     setTextModel,
     setSelectedTools,
     setAllTools,
-    setShowLoginDialog,
   } = configsStore
-
-  // 存储上一次的 allTools 值，用于检测新添加的工具，并自动选中
-  const previousAllToolsRef = useRef<ModelInfo[]>([])
 
   const { data: modelList, refetch: refreshModels } = useQuery({
     queryKey: ['list_models_2'],
     queryFn: () => listModels(),
-    staleTime: 1000, // 5分钟内数据被认为是新鲜的
-    placeholderData: (previousData) => previousData, // 关键：显示旧数据同时获取新数据
-    refetchOnWindowFocus: true, // 窗口获得焦点时重新获取
-    refetchOnReconnect: true, // 网络重连时重新获取
-    refetchOnMount: true, // 挂载时重新获取
+    staleTime: 1000,
+    placeholderData: (previousData) => previousData,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchOnMount: true,
   })
 
   useEffect(() => {
@@ -68,84 +61,24 @@ export const ConfigsProvider = ({
     setTextModels(llmModels || [])
     setAllTools(toolList || [])
 
-    // 设置选择的文本模型
-    const textModel = localStorage.getItem('text_model')
-    const apipodDefaultModel = llmModels.find(
+    const defaultModel = llmModels.find(
       (m) => m.provider === 'apipodcode' && m.model === 'gpt-5.4'
     )
-    if (
-      textModel &&
-      llmModels.find((m) => m.provider + ':' + m.model === textModel)
-    ) {
-      setTextModel(
-        llmModels.find((m) => m.provider + ':' + m.model === textModel)
-      )
-    } else {
-      const defaultModel =
-        DEFAULT_PROVIDER_PRIORITY.map((provider) =>
-          llmModels.find((m) => m.provider === provider && m.type === 'text')
-        ).find(Boolean) || llmModels.find((m) => m.type === 'text')
-      setTextModel(defaultModel)
-      if (defaultModel) {
-        localStorage.setItem(
-          'text_model',
-          `${defaultModel.provider}:${defaultModel.model}`
-        )
-      }
-    }
+    setTextModel(defaultModel || llmModels.find((m) => m.type === 'text'))
+    setSelectedTools(getPreferredDefaultTools(toolList))
 
-    // 设置选中的工具模型
-    const disabledToolsJson = localStorage.getItem('disabled_tool_ids')
-    const toolSelectionMigrationVersion = localStorage.getItem(
-      'tool_selection_migration_version'
-    )
-    let currentSelectedTools: ToolInfo[] = []
-    currentSelectedTools = getPreferredDefaultTools(toolList)
-    if (disabledToolsJson) {
-      try {
-        const disabledToolIds: string[] = JSON.parse(disabledToolsJson)
-        const shouldMigrateLegacyAllSelected =
-          toolSelectionMigrationVersion !== TOOL_SELECTION_MIGRATION_VERSION &&
-          disabledToolIds.length === 0
-
-        if (!shouldMigrateLegacyAllSelected) {
-          // filter out disabled tools
-          currentSelectedTools = toolList.filter(
-            (t) => !disabledToolIds.includes(t.id)
-          )
-        }
-      } catch (error) {
-        console.error(error)
-      }
-    }
-
-    localStorage.setItem(
-      'disabled_tool_ids',
-      JSON.stringify(
-        toolList
-          .filter((tool) => !currentSelectedTools.some((selected) => selected.id === tool.id))
-          .map((tool) => tool.id)
-      )
-    )
-    localStorage.setItem(
-      'tool_selection_migration_version',
-      TOOL_SELECTION_MIGRATION_VERSION
-    )
-
-    setSelectedTools(currentSelectedTools)
-
-    // 只有完全没有文本模型可用时才提示登录/配置 provider。
-    // 纯文本使用场景不应因为没有图片/视频工具而强制登录 Jaaz。
-    if (llmModels.length === 0) {
-      setShowLoginDialog(true)
-    }
+    localStorage.removeItem('text_model')
+    localStorage.removeItem('disabled_tool_ids')
+    localStorage.removeItem('tool_selection_migration_version')
+    localStorage.removeItem('app_access_token_legacy')
+    localStorage.removeItem('app_user_info_legacy')
+    localStorage.removeItem('show_settings_dialog')
   }, [
     modelList,
     setSelectedTools,
     setTextModel,
     setTextModels,
     setAllTools,
-    setShowLoginDialog,
   ])
 
   return (

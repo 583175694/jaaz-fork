@@ -2,6 +2,9 @@ import { cn } from '@/lib/utils'
 import * as Dialog from '@radix-ui/react-dialog'
 import { AnimatePresence, motion } from 'motion/react'
 
+const OPEN_EASE = [0.17, 0.67, 0.51, 1] as const
+const CLOSE_EASE = [0.67, 0.17, 0.62, 0.64] as const
+
 type CommonDialogProps = {
   open: boolean
   children: React.ReactNode
@@ -23,7 +26,7 @@ const CommonDialogContent: React.FC<CommonDialogProps> = ({
     z: 0,
     transition: {
       duration: 0.5,
-      ease: [0.17, 0.67, 0.51, 1],
+      ease: OPEN_EASE,
       opacity: {
         delay: 0.2,
         duration: 0.4,
@@ -40,7 +43,7 @@ const CommonDialogContent: React.FC<CommonDialogProps> = ({
     rotateX: 25,
     transition: {
       duration: 0.3,
-      ease: [0.67, 0.17, 0.62, 0.64],
+      ease: CLOSE_EASE,
     },
   }
 

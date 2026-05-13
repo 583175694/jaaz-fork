@@ -17,6 +17,7 @@ from services.production_workflow_service import (
 )
 from services.stream_service import add_stream_task, get_stream_task, remove_stream_task
 from services.websocket_service import send_to_websocket
+from services.runtime_defaults import get_default_text_model
 from tools.utils.image_utils import process_input_image
 from tools.video_generation.video_generation_core import generate_video_with_provider
 from tools.video_providers.apipod_provider import (
@@ -42,22 +43,7 @@ def _build_model_info() -> Dict[str, List[ModelInfo]]:
 
 
 def _normalize_text_model(data: Dict[str, Any]) -> Optional[ModelInfo]:
-    text_model = data.get("text_model", {})
-    if not isinstance(text_model, dict):
-        return None
-
-    provider = str(text_model.get("provider", "") or "").strip()
-    model = str(text_model.get("model", "") or "").strip()
-    url = str(text_model.get("url", "") or "").strip()
-    if not provider or not model:
-        return None
-
-    return {
-        "provider": provider,
-        "model": model,
-        "url": url,
-        "type": "text",
-    }
+    return get_default_text_model()
 
 
 def _normalize_file_ids(data: Dict[str, Any]) -> List[str]:

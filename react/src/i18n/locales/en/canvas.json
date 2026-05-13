@@ -22,7 +22,7 @@
     "nothingSelected": "No assets selected",
     "exportingAssets": "Exporting assets...",
     "failedToExportImages": "Failed to export images",
-    "gptImagePermissionRequired": "You must enable gpt-image-1 model permissions to use this feature!"
+    "gptImagePermissionRequired": "Image generation is currently unavailable. Please check the built-in APIPod image configuration."
   },
   "deleteDialog": {
     "title": "Delete Canvas",
@@ -44,7 +44,7 @@
   },
   "popbar": {
     "addToChat": "Add to chat",
-    "magicGenerate": "✨ GPT Image Redraw",
+    "magicGenerate": "✨ Image Redraw",
     "generateVideo": "🎬 Generate video"
   },
   "myAssets": "My Assets",

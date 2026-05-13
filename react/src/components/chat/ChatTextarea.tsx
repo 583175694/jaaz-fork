@@ -1,5 +1,4 @@
 import { cancelChat } from '@/api/chat'
-import { cancelMagicGenerate } from '@/api/magic'
 import { uploadImage } from '@/api/upload'
 import { Button } from '@/components/ui/button'
 import { useConfigs } from '@/contexts/configs'
@@ -29,11 +28,6 @@ import Textarea, { TextAreaRef } from 'rc-textarea'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import ModelSelectorV2 from './ModelSelectorV2'
-import ModelSelectorV3 from './ModelSelectorV3'
-import { useAuth } from '@/contexts/AuthContext'
-import { useBalance } from '@/hooks/use-balance'
-import { BASE_API_URL } from '@/constants'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -65,9 +59,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
   onCancelChat,
 }) => {
   const { t } = useTranslation()
-  const { authStatus } = useAuth()
-  const { textModel, selectedTools, setShowLoginDialog } = useConfigs()
-  const { balance } = useBalance()
+  const { textModel, selectedTools } = useConfigs()
   const [prompt, setPrompt] = useState('')
   const textareaRef = useRef<TextAreaRef>(null)
   const [images, setImages] = useState<
@@ -85,30 +77,6 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
   const MAX_QUANTITY = 30
 
   const imageInputRef = useRef<HTMLInputElement>(null)
-
-  // 充值按钮组件
-  const RechargeContent = useCallback(() => (
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-sm text-muted-foreground flex-1">
-        {t('chat:insufficientBalanceDescription')}
-      </span>
-      <Button
-        size="sm"
-        variant="outline"
-        className="shrink-0"
-        onClick={() => {
-          const billingUrl = `${BASE_API_URL}/billing`
-          if (window.electronAPI?.openBrowserUrl) {
-            window.electronAPI.openBrowserUrl(billingUrl)
-          } else {
-            window.open(billingUrl, '_blank')
-          }
-        }}
-      >
-        {t('common:auth.recharge')}
-      </Button>
-    </div>
-  ), [t])
 
   const { mutate: uploadImageMutation } = useMutation({
     mutationFn: (file: File) => uploadImage(file),
@@ -145,8 +113,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
 
   const handleCancelChat = useCallback(async () => {
     if (sessionId) {
-      // 同时取消普通聊天和魔法生成任务
-      await Promise.all([cancelChat(sessionId), cancelMagicGenerate(sessionId)])
+      await cancelChat(sessionId)
     }
     onCancelChat?.()
   }, [sessionId, onCancelChat])
@@ -155,26 +122,8 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
   const handleSendPrompt = useCallback(async () => {
     if (pending) return
 
-    // 检查是否使用 Jaaz 服务
-    const isUsingJaaz =
-      textModel?.provider === 'jaaz' ||
-      selectedTools?.some((tool) => tool.provider === 'jaaz')
-    // console.log('👀isUsingJaaz', textModel, selectedTools, isUsingJaaz)
-
-    // 只有当使用 Jaaz 服务且余额为 0 时才提醒充值
-    if (authStatus.is_logged_in && isUsingJaaz && parseFloat(balance) <= 0) {
-      toast.error(t('chat:insufficientBalance'), {
-        description: <RechargeContent />,
-        duration: 10000, // 10s，给用户更多时间操作
-      })
-      return
-    }
-
     if (!textModel) {
       toast.error(t('chat:textarea.selectModel'))
-      if (!authStatus.is_logged_in) {
-        setShowLoginDialog(true)
-      }
       return
     }
 
@@ -293,10 +242,6 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
     selectedAspectRatio,
     quantity,
     images.length,
-    authStatus.is_logged_in,
-    setShowLoginDialog,
-    balance,
-    RechargeContent,
   ])
 
   // Drop Area
@@ -516,8 +461,6 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
           >
             <PlusIcon className="size-4" />
           </Button>
-
-          <ModelSelectorV3 />
 
           {/* Aspect Ratio Selector */}
           <DropdownMenu>

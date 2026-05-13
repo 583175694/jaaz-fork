@@ -49,9 +49,6 @@ export interface ButtonProps {
 export declare const ChatInterface: React.FC<ChatInterfaceProps>
 export declare const ChatTextarea: React.FC<any>
 export declare const ChatHistory: React.FC<any>
-export declare const ChatMagicGenerator: React.FC<any>
-export declare const ModelSelector: React.FC<any>
-export declare const ModelSelectorV2: React.FC<any>
 export declare const SessionSelector: React.FC<any>
 export declare const ChatSpinner: React.FC<any>
 

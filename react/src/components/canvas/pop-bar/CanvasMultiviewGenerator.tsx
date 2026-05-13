@@ -276,10 +276,10 @@ const CanvasMultiviewGenerator = ({
       setPreviewRefreshToken((prev) => prev + 1)
     }
 
-    window.addEventListener('jaaz:refresh-canvas', handleRefresh as EventListener)
+    window.addEventListener('app:refresh-canvas', handleRefresh as EventListener)
     return () => {
       window.removeEventListener(
-        'jaaz:refresh-canvas',
+        'app:refresh-canvas',
         handleRefresh as EventListener
       )
     }

@@ -77,10 +77,10 @@ export const CanvasProvider = ({
       await syncProductionState(canvasId, { silent: false })
     }
 
-    window.addEventListener('jaaz:refresh-canvas', handleRefresh as EventListener)
+    window.addEventListener('app:refresh-canvas', handleRefresh as EventListener)
     return () => {
       window.removeEventListener(
-        'jaaz:refresh-canvas',
+        'app:refresh-canvas',
         handleRefresh as EventListener
       )
     }

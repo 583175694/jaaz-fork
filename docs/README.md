@@ -1,6 +1,6 @@
 # Docs
 
-This directory contains design notes and implementation plans for Jaaz-specific
+This directory contains design notes and implementation plans for AI Studio-specific
 product and generation workflows.
 
 Current documents:

@@ -30,7 +30,7 @@ const CanvasMainImageSelector = ({
     }
     setMainImageFileId(canvasFileId)
     window.dispatchEvent(
-      new CustomEvent('jaaz:refresh-canvas', {
+      new CustomEvent('app:refresh-canvas', {
         detail: {
           canvasId,
           reason: 'main-image-updated',

@@ -7,7 +7,6 @@ from utils.http_client import HttpClient
 from langgraph_swarm import create_swarm  # type: ignore
 from langchain_openai import ChatOpenAI
 import langchain_openai.chat_models.base as langchain_openai_base
-from langchain_ollama import ChatOllama
 from services.websocket_service import send_to_websocket  # type: ignore
 from services.config_service import config_service
 from typing import Optional, List, Dict, Any, cast, Set, TypedDict
@@ -202,7 +201,7 @@ class APIPodCompatibleChatOpenAI(ChatOpenAI):
         if isinstance(messages, list):
             sanitized_messages = _sanitize_openai_payload_messages(messages)
             try:
-                with open("/tmp/jaaz-last-openai-payload.json", "w", encoding="utf-8") as payload_file:
+                with open("/tmp/ai-studio-last-openai-payload.json", "w", encoding="utf-8") as payload_file:
                     json.dump(
                         {
                             **payload,
@@ -307,7 +306,7 @@ def _compact_multimodal_history(
 ) -> List[Dict[str, Any]]:
     """Trim heavy historical base64 images from prior turns.
 
-    The current UI stores some canvas/magic interactions as full data URLs
+    The current UI stores some canvas redraw interactions as full data URLs
     inside chat history. Re-sending all older base64 images on every turn can
     create multi-megabyte payloads and cause upstream provider failures. Keep
     the latest user turn untouched, but strip historical inline images while
@@ -571,27 +570,21 @@ def _create_text_model(text_model: ModelInfo) -> Any:
     # TODO: Verify if max token is working
     # max_tokens = text_model.get('max_tokens', 8148)
 
-    if provider == 'ollama':
-        return ChatOllama(
-            model=model,
-            base_url=url,
-        )
-    else:
-        # Create httpx client with SSL configuration for ChatOpenAI
-        http_client = HttpClient.create_sync_client()
-        http_async_client = HttpClient.create_async_client()
-        return APIPodCompatibleChatOpenAI(
-            model=model,
-            api_key=api_key,  # type: ignore
-            timeout=300,
-            base_url=url,
-            temperature=0,
-            disable_streaming="tool_calling",
-            model_kwargs={"parallel_tool_calls": False},
-            # max_tokens=max_tokens, # TODO: 暂时注释掉有问题的参数
-            http_client=http_client,
-            http_async_client=http_async_client
-        )
+    # Create httpx client with SSL configuration for ChatOpenAI-compatible APIs
+    http_client = HttpClient.create_sync_client()
+    http_async_client = HttpClient.create_async_client()
+    return APIPodCompatibleChatOpenAI(
+        model=model,
+        api_key=api_key,  # type: ignore
+        timeout=300,
+        base_url=url,
+        temperature=0,
+        disable_streaming="tool_calling",
+        model_kwargs={"parallel_tool_calls": False},
+        # max_tokens=max_tokens, # TODO: 暂时注释掉有问题的参数
+        http_client=http_client,
+        http_async_client=http_async_client
+    )
 
 
 async def _handle_error(error: Exception, session_id: str) -> None:

@@ -85,10 +85,10 @@ function Canvas() {
       fetchCanvas({ silent: true })
     }
 
-    window.addEventListener('jaaz:refresh-canvas', handleRefresh as EventListener)
+    window.addEventListener('app:refresh-canvas', handleRefresh as EventListener)
     return () => {
       window.removeEventListener(
-        'jaaz:refresh-canvas',
+        'app:refresh-canvas',
         handleRefresh as EventListener
       )
     }
@@ -110,7 +110,7 @@ function Canvas() {
         <ResizablePanelGroup
           direction='horizontal'
           className='w-screen h-screen'
-          autoSaveId='jaaz-chat-panel'
+          autoSaveId='app-chat-panel'
         >
           <ResizablePanel className='relative' defaultSize={75}>
             <div className='w-full h-full'>

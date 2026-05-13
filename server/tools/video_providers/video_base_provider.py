@@ -65,21 +65,21 @@ def get_default_provider(model_info_list: Optional[List[ModelInfo]] = None) -> s
 
     Args:
         model_info_list: List of model info dictionaries. If provided,
-                        will prioritize jaaz provider if available, otherwise use first one.
-                        If not provided, returns 'jaaz' as default.
+                        prefer the APIPod video provider and otherwise use the
+                        first declared provider.
 
     Returns:
         str: Provider name
     """
     if model_info_list:
-        # Prioritize Jaaz provider if available
+        # Production runtime always prefers the built-in APIPod provider.
         for model_info in model_info_list:
-            if model_info.get('provider') == 'jaaz':
-                return 'jaaz'
+            if model_info.get('provider') == 'apipodvideo':
+                return 'apipodvideo'
 
-        # If no jaaz provider, use the first available one
+        # Fallback to the first declared provider if the caller passed a
+        # restricted set intentionally.
         if model_info_list:
-            return model_info_list[0].get('provider', 'jaaz')
+            return model_info_list[0].get('provider', 'apipodvideo')
 
-    # Default fallback
-    return "jaaz"
+    return "apipodvideo"

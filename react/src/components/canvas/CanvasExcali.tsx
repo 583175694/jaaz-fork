@@ -79,6 +79,15 @@ const normalizeCanvasInitialData = (
 
   const files = (initialData.files || {}) as Record<string, BinaryFileData>
   const normalizedElements = initialData.elements.map((element) => {
+    if (element.type === 'image') {
+      const fileId = (element as { fileId?: string }).fileId
+      const file = fileId ? files[fileId] : undefined
+      return {
+        ...element,
+        status: file?.dataURL ? 'saved' : element.status,
+      }
+    }
+
     if (element.type !== 'video') {
       return element
     }
@@ -119,6 +128,162 @@ const stripCollaboratorsFromAppState = (
   return safeAppState
 }
 
+const sanitizePersistedAppState = (
+  appState?: AppState | ExcalidrawInitialDataState['appState'],
+  options?: {
+    dropViewport?: boolean
+    dropCanvasMetrics?: boolean
+  }
+) => {
+  const safeAppState = stripCollaboratorsFromAppState(appState) as
+    | (Partial<AppState> & Record<string, unknown>)
+    | undefined
+  if (!safeAppState) {
+    return safeAppState
+  }
+
+  const {
+    width: _width,
+    height: _height,
+    offsetTop: _offsetTop,
+    offsetLeft: _offsetLeft,
+    selectedElementIds: _selectedElementIds,
+    selectedGroupIds: _selectedGroupIds,
+    previousSelectedElementIds: _previousSelectedElementIds,
+    hoveredElementIds: _hoveredElementIds,
+    editingTextElement: _editingTextElement,
+    editingGroupId: _editingGroupId,
+    editingLinearElement: _editingLinearElement,
+    editingFrame: _editingFrame,
+    activeEmbeddable: _activeEmbeddable,
+    newElement: _newElement,
+    multiElement: _multiElement,
+    resizingElement: _resizingElement,
+    selectionElement: _selectionElement,
+    selectedElementsAreBeingDragged: _selectedElementsAreBeingDragged,
+    openMenu: _openMenu,
+    openPopup: _openPopup,
+    openSidebar: _openSidebar,
+    openDialog: _openDialog,
+    contextMenu: _contextMenu,
+    toast: _toast,
+    searchMatches: _searchMatches,
+    suggestedBindings: _suggestedBindings,
+    startBoundElement: _startBoundElement,
+    snapLines: _snapLines,
+    originSnapOffset: _originSnapOffset,
+    userToFollow: _userToFollow,
+    followedBy: _followedBy,
+    isLoading: _isLoading,
+    isResizing: _isResizing,
+    isRotating: _isRotating,
+    isCropping: _isCropping,
+    croppingElementId: _croppingElementId,
+    scrolledOutside: _scrolledOutside,
+    showWelcomeScreen: _showWelcomeScreen,
+    pasteDialog: _pasteDialog,
+    pendingImageElementId: _pendingImageElementId,
+    fileHandle: _fileHandle,
+    ...persistedAppState
+  } = safeAppState
+
+  let sanitizedAppState = persistedAppState
+
+  if (options?.dropViewport) {
+    const {
+      scrollX: _scrollX,
+      scrollY: _scrollY,
+      zoom: _zoom,
+      ...withoutViewport
+    } = sanitizedAppState
+    sanitizedAppState = withoutViewport
+  }
+
+  if (options?.dropCanvasMetrics) {
+    const {
+      width: _persistedWidth,
+      height: _persistedHeight,
+      offsetTop: _persistedOffsetTop,
+      offsetLeft: _persistedOffsetLeft,
+      ...withoutCanvasMetrics
+    } = sanitizedAppState
+    sanitizedAppState = withoutCanvasMetrics
+  }
+
+  return sanitizedAppState
+}
+
+const shouldResetViewportOnLoad = (data?: ExcalidrawInitialDataState) => {
+  const appState = data?.appState as
+    | (AppState & {
+        width?: number
+        height?: number
+        scrollX?: number
+        scrollY?: number
+        zoom?: { value?: number }
+      })
+    | undefined
+
+  if (!appState) {
+    return false
+  }
+
+  const width = Number(appState.width || 0)
+  const height = Number(appState.height || 0)
+  const zoomValue = Number(appState.zoom?.value || 0)
+
+  if (width <= 0 || height <= 0) {
+    return true
+  }
+
+  if (!Number.isFinite(zoomValue) || zoomValue <= 0) {
+    return true
+  }
+
+  const drawableElements = (data?.elements || []).filter(
+    (element) =>
+      !element.isDeleted &&
+      !isStoryboardDecorationElement(element as { customData?: any })
+  )
+  if (!drawableElements.length) {
+    return false
+  }
+
+  const bounds = drawableElements.reduce(
+    (acc, element) => {
+      const x = Number(element.x || 0)
+      const y = Number(element.y || 0)
+      const width = Number((element as { width?: number }).width || 0)
+      const height = Number((element as { height?: number }).height || 0)
+      return {
+        minX: Math.min(acc.minX, x),
+        minY: Math.min(acc.minY, y),
+        maxX: Math.max(acc.maxX, x + width),
+        maxY: Math.max(acc.maxY, y + height),
+      }
+    },
+    {
+      minX: Number.POSITIVE_INFINITY,
+      minY: Number.POSITIVE_INFINITY,
+      maxX: Number.NEGATIVE_INFINITY,
+      maxY: Number.NEGATIVE_INFINITY,
+    }
+  )
+
+  const sceneCenterX = (bounds.minX + bounds.maxX) / 2
+  const sceneCenterY = (bounds.minY + bounds.maxY) / 2
+  const viewportCenterX = -Number(appState.scrollX || 0) + width / (2 * zoomValue)
+  const viewportCenterY =
+    -Number(appState.scrollY || 0) + height / (2 * zoomValue)
+  const sceneWidth = Math.max(bounds.maxX - bounds.minX, 1)
+  const sceneHeight = Math.max(bounds.maxY - bounds.minY, 1)
+
+  return (
+    Math.abs(viewportCenterX - sceneCenterX) > sceneWidth * 1.5 ||
+    Math.abs(viewportCenterY - sceneCenterY) > sceneHeight * 1.5
+  )
+}
+
 const buildSceneSyncSignature = (
   data?: ExcalidrawInitialDataState
 ): string => {
@@ -135,6 +300,45 @@ const buildSceneSyncSignature = (
     })),
     fileIds: Object.keys(data.files || {}).sort(),
   })
+}
+
+const buildViewportSyncSignature = (
+  data?: ExcalidrawInitialDataState
+): string => {
+  if (!data) {
+    return 'empty'
+  }
+
+  const elements = (data.elements || []).filter(
+    (element) => !isStoryboardDecorationElement(element as { customData?: any })
+  )
+
+  if (!elements.length) {
+    return 'no-elements'
+  }
+
+  const bounds = elements.reduce(
+    (acc, element) => {
+      const x = Number(element.x || 0)
+      const y = Number(element.y || 0)
+      const width = Number((element as { width?: number }).width || 0)
+      const height = Number((element as { height?: number }).height || 0)
+      return {
+        minX: Math.min(acc.minX, x),
+        minY: Math.min(acc.minY, y),
+        maxX: Math.max(acc.maxX, x + width),
+        maxY: Math.max(acc.maxY, y + height),
+      }
+    },
+    {
+      minX: Number.POSITIVE_INFINITY,
+      minY: Number.POSITIVE_INFINITY,
+      maxX: Number.NEGATIVE_INFINITY,
+      maxY: Number.NEGATIVE_INFINITY,
+    }
+  )
+
+  return JSON.stringify(bounds)
 }
 
 const isStoryboardDecorationElement = (element: { customData?: any }) => {
@@ -427,16 +631,17 @@ const extractPersistedVideoState = (
   const persistedVideoFiles: Record<string, BinaryFileData> = {}
 
   for (const element of initialData?.elements || []) {
-    if (element.type !== 'video') {
+    const videoLikeElement = element as { id?: string; type?: string; fileId?: string }
+    if (videoLikeElement.type !== 'video') {
       continue
     }
 
-    const fileId = (element as { fileId?: string }).fileId
+    const fileId = videoLikeElement.fileId
     if (!fileId) {
       continue
     }
 
-    persistedVideoElements[element.id] = element
+    persistedVideoElements[String(videoLikeElement.id || fileId)] = element
     if (normalizedFiles[fileId]) {
       persistedVideoFiles[fileId] = normalizedFiles[fileId]
     }
@@ -564,7 +769,9 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
           ...nonVideoElements,
           ...Object.values(serializedVideoElements),
         ],
-        appState: stripCollaboratorsFromAppState(appState) as AppState,
+        appState: sanitizePersistedAppState(appState, {
+          dropCanvasMetrics: true,
+        }) as unknown as AppState,
         files: mergedFiles,
       }
 
@@ -619,6 +826,12 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
   const lastAppliedInitialDataSignatureRef = useRef<string>(
     buildSceneSyncSignature(normalizeCanvasInitialData(initialData))
   )
+  const lastViewportSyncSignatureRef = useRef<string>(
+    buildViewportSyncSignature(normalizeCanvasInitialData(initialData))
+  )
+  const shouldRefitOnInitialLoadRef = useRef<boolean>(
+    shouldResetViewportOnLoad(normalizeCanvasInitialData(initialData))
+  )
   const suppressNextSaveRef = useRef(false)
   const { theme } = useTheme()
 
@@ -636,16 +849,14 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
       excalidrawAPI.updateScene({
         appState: {
           viewBackgroundColor: '#121212',
-          gridColor: 'rgba(255, 255, 255, 0.1)',
-        }
+        },
       })
     } else if (excalidrawAPI && theme === 'light') {
       // 恢复浅色背景
       excalidrawAPI.updateScene({
         appState: {
           viewBackgroundColor: '#ffffff',
-          gridColor: 'rgba(0, 0, 0, 0.1)',
-        }
+        },
       })
     }
   }, [excalidrawAPI, theme])
@@ -654,7 +865,36 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
     const persistedVideoState = extractPersistedVideoState(initialData)
     persistedVideoElementsRef.current = persistedVideoState.elements
     persistedVideoFilesRef.current = persistedVideoState.files
+    shouldRefitOnInitialLoadRef.current = shouldResetViewportOnLoad(
+      normalizeCanvasInitialData(initialData)
+    )
   }, [initialData])
+
+  useEffect(() => {
+    if (!excalidrawAPI || !shouldRefitOnInitialLoadRef.current) {
+      return
+    }
+
+    shouldRefitOnInitialLoadRef.current = false
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        try {
+          excalidrawAPI.scrollToContent(undefined, {
+            fitToContent: true,
+            animate: false,
+          })
+          console.log('🖼️ Refit canvas viewport on initial load', {
+            canvasId,
+          })
+        } catch (error) {
+          console.warn('🖼️ Failed to refit canvas viewport on initial load', {
+            canvasId,
+            error,
+          })
+        }
+      })
+    })
+  }, [canvasId, excalidrawAPI, initialData])
 
   useEffect(() => {
     if (!excalidrawAPI || !initialData) {
@@ -663,6 +903,7 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
 
     const normalizedData = normalizeCanvasInitialData(initialData)
     const nextSignature = buildSceneSyncSignature(normalizedData)
+    const nextViewportSignature = buildViewportSyncSignature(normalizedData)
 
     if (lastAppliedInitialDataSignatureRef.current === nextSignature) {
       return
@@ -689,6 +930,27 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
         ...buildStoryboardDecorations(normalizedData, mainImageFileId),
       ],
     })
+
+    if (lastViewportSyncSignatureRef.current !== nextViewportSignature) {
+      lastViewportSyncSignatureRef.current = nextViewportSignature
+      requestAnimationFrame(() => {
+        try {
+          excalidrawAPI.scrollToContent(undefined, {
+            fitToContent: true,
+            animate: false,
+          })
+          console.log('🖼️ Refit canvas viewport after remote sync', {
+            canvasId,
+            viewportSignature: nextViewportSignature,
+          })
+        } catch (error) {
+          console.warn('🖼️ Failed to refit canvas viewport after remote sync', {
+            canvasId,
+            error,
+          })
+        }
+      })
+    }
   }, [canvasId, excalidrawAPI, initialData, mainImageFileId])
 
   const addImageToExcalidraw = useCallback(
@@ -719,6 +981,7 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
         locked: false,
         groupIds: [],
         isDeleted: false,
+        status: 'saved' as const,
       }
 
       excalidrawAPI.updateScene({
@@ -876,7 +1139,7 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
         // Return the VideoPlayer component
         return (
           <VideoElement
-            src={link}
+            src={link || ''}
             width={element.width}
             height={element.height}
           />
@@ -942,44 +1205,47 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
   }, [handleImageGenerated, handleVideoGenerated])
 
   return (
-    <Excalidraw
-      theme={customTheme as Theme}
-      langCode={i18n.language}
-      className={excalidrawClassName}
-      excalidrawAPI={(api) => {
-        setExcalidrawAPI(api)
-      }}
-      onChange={handleChange}
-      initialData={() => {
-        const data = normalizeCanvasInitialData(initialData)
-        console.log('👇initialData', data)
-        if (!data) {
-          return null
-        }
+    <div className={`${excalidrawClassName} w-full h-full min-h-0`}>
+      <Excalidraw
+        theme={customTheme as Theme}
+        langCode={i18n.language}
+        excalidrawAPI={(api) => {
+          setExcalidrawAPI(api)
+        }}
+        onChange={handleChange}
+        initialData={() => {
+          const data = normalizeCanvasInitialData(initialData)
+          console.log('👇initialData', data)
+          if (!data) {
+            return null
+          }
 
-        return {
-          ...data,
-          appState: stripCollaboratorsFromAppState(data.appState),
-        }
-      }}
-      renderEmbeddable={renderEmbeddable}
-      // Allow all URLs for embeddable content
-      validateEmbeddable={(url: string) => {
-        console.log('👇 Validating embeddable URL:', url)
-        // Allow all URLs - return true for everything
-        return true
-      }}
-      // Ensure interactive mode is enabled
-      viewModeEnabled={false}
-      zenModeEnabled={false}
-      // Allow element manipulation
-      onPointerUpdate={(payload) => {
-        // Minimal logging - only log significant pointer events
-        if (payload.button === 'down' && Math.random() < 0.05) {
-          // console.log('👇 Pointer down on:', payload.pointer.x, payload.pointer.y)
-        }
-      }}
-    />
+          const dropViewport = shouldResetViewportOnLoad(data)
+          const sanitizedAppState = sanitizePersistedAppState(data.appState, {
+            dropViewport,
+            dropCanvasMetrics: true,
+          })
+
+          return {
+            ...data,
+            appState: sanitizedAppState,
+          }
+        }}
+        renderEmbeddable={renderEmbeddable}
+        // Allow all URLs for embeddable content
+        validateEmbeddable={(url: string) => {
+          console.log('👇 Validating embeddable URL:', url)
+          return true
+        }}
+        viewModeEnabled={false}
+        zenModeEnabled={false}
+        onPointerUpdate={(payload) => {
+          if (payload.button === 'down' && Math.random() < 0.05) {
+            return
+          }
+        }}
+      />
+    </div>
   )
 }
 

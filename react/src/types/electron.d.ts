@@ -8,18 +8,6 @@ interface ElectronAPI {
   }) => Promise<{ success?: boolean; error?: string }>
   pickImage: () => Promise<string[] | null>
   pickVideo: () => Promise<string | null>
-  installComfyUI: () => Promise<{ success: boolean; error?: string }>
-  uninstallComfyUI: () => Promise<{ success: boolean; error?: string }>
-  cancelComfyUIInstall: () => Promise<{
-    success?: boolean
-    error?: string
-    message?: string
-  }>
-  checkComfyUIInstalled: () => Promise<boolean>
-  // ComfyUI process management methods
-  startComfyUIProcess: () => Promise<{ success: boolean; message?: string }>
-  stopComfyUIProcess: () => Promise<{ success: boolean; message?: string }>
-  getComfyUIProcessStatus: () => Promise<{ running: boolean; pid?: number }>
   // Auto-updater methods
   checkForUpdates: () => Promise<{ message: string }>
   restartAndInstall: () => Promise<void>

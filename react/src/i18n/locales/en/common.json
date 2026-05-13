@@ -52,28 +52,6 @@
     "installButton": "Install Update",
     "installing": "Installing..."
   },
-  "auth": {
-    "login": "Login",
-    "logout": "Logout",
-    "loginToJaaz": "Login to Jaaz",
-    "myAccount": "My Account",
-    "loginDescription": "Login to use cloud AI models",
-    "startLogin": "Start Login",
-    "preparingLogin": "Preparing login...",
-    "cancel": "Cancel",
-    "loginSuccessMessage": "Login successful!",
-    "authExpiredMessage": "Authorization expired, please login again",
-    "authErrorMessage": "Error occurred while checking authorization status",
-    "waitingForBrowser": "Waiting for login completion in browser...",
-    "pollErrorMessage": "Failed to check login status, please try again",
-    "preparingLoginMessage": "Preparing login...",
-    "browserLoginMessage": "Please complete login in browser",
-    "loginRequestFailed": "Login request failed, please try again",
-    "logoutSuccessMessage": "Successfully logged out",
-    "notLoggedIn": "Not logged in",
-    "balance": "Balance",
-    "recharge": "Recharge"
-  },
   "socket": {
     "connectionError": "Connection error ({{current}}/{{max}}): {{error}}",
     "maxRetriesReached": "Connection failed, please restart the application"

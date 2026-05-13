@@ -22,34 +22,3 @@ export async function updateConfig(config: {
   })
   return await response.json()
 }
-
-// Update jaaz provider api_key after login
-export async function updateJaazApiKey(token: string): Promise<void> {
-  try {
-    const config = await getConfig()
-
-    if (config.jaaz) {
-      config.jaaz.api_key = token
-    }
-
-    await updateConfig(config)
-    console.log('Successfully updated jaaz provider api_key')
-  } catch (error) {
-    console.error('Error updating jaaz provider api_key:', error)
-  }
-}
-
-// Clear jaaz provider api_key after logout
-export async function clearJaazApiKey(): Promise<void> {
-  try {
-    const config = await getConfig()
-
-    if (config.jaaz) {
-      config.jaaz.api_key = ''
-      await updateConfig(config)
-      console.log('Successfully cleared jaaz provider api_key')
-    }
-  } catch (error) {
-    console.error('Error clearing jaaz provider api_key:', error)
-  }
-}

@@ -8,9 +8,7 @@ from services.direct_storyboard_service import (
     set_storyboard_primary_variant,
 )
 from services.direct_video_service import handle_direct_video, preview_direct_video_prompt
-from services.magic_service import handle_magic
 from services.stream_service import get_stream_task
-from typing import Dict
 
 router = APIRouter(prefix="/api")
 
@@ -51,25 +49,6 @@ async def cancel_chat(session_id: str):
         task.cancel()
         return {"status": "cancelled"}
     return {"status": "not_found_or_done"}
-
-@router.post("/magic")
-async def magic(request: Request):
-    """
-    Endpoint to handle magic generation requests.
-
-    Receives a JSON payload from the client, passes it to the magic handler,
-    and returns a success status.
-
-    Request body:
-        JSON object containing magic generation data.
-
-    Response:
-        {"status": "done"}
-    """
-    data = await request.json()
-    await handle_magic(data)
-    return {"status": "done"}
-
 
 @router.post("/direct_video")
 async def direct_video(request: Request):
@@ -114,23 +93,3 @@ async def storyboard_mark_primary(request: Request):
         file_id=str(data.get("file_id", "") or ""),
     )
     return {"status": "done", "result": result}
-
-@router.post("/magic/cancel/{session_id}")
-async def cancel_magic(session_id: str) -> Dict[str, str]:
-    """
-    Endpoint to cancel an ongoing magic generation task for a given session_id.
-
-    If the task exists and is not yet completed, it will be cancelled.
-
-    Path parameter:
-        session_id (str): The ID of the session whose task should be cancelled.
-
-    Response:
-        {"status": "cancelled"} if the task was cancelled.
-        {"status": "not_found_or_done"} if no such task exists or it is already done.
-    """
-    task = get_stream_task(session_id)
-    if task and not task.done():
-        task.cancel()
-        return {"status": "cancelled"}
-    return {"status": "not_found_or_done"}

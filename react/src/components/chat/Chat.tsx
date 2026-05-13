@@ -8,7 +8,6 @@ import {
 import Blur from '@/components/common/Blur'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { eventBus, TEvents } from '@/lib/event'
-import ChatMagicGenerator from './ChatMagicGenerator'
 import ChatCanvasMultiviewGenerator from './ChatCanvasMultiviewGenerator'
 import ChatCanvasStoryboardGenerator from './ChatCanvasStoryboardGenerator'
 import ChatCanvasVideoGenerator from './ChatCanvasVideoGenerator'
@@ -35,7 +34,6 @@ import {
 import { useTranslation } from 'react-i18next'
 import { PhotoProvider } from 'react-photo-view'
 import { toast } from 'sonner'
-import ShinyText from '../ui/shiny-text'
 import ChatTextarea from './ChatTextarea'
 import MessageRegular from './Message/Regular'
 import { ToolCallContent } from './Message/ToolCallContent'
@@ -43,17 +41,12 @@ import ToolCallTag from './Message/ToolCallTag'
 import SessionSelector from './SessionSelector'
 import ChatSpinner from './Spinner'
 import ToolcallProgressUpdate from './ToolcallProgressUpdate'
-import ShareTemplateDialog from './ShareTemplateDialog'
 
 import { useConfigs } from '@/contexts/configs'
 import { useCanvas } from '@/contexts/canvas'
 import 'react-photo-view/dist/react-photo-view.css'
-import { DEFAULT_SYSTEM_PROMPT } from '@/constants'
+import { APP_NAME, DEFAULT_SYSTEM_PROMPT } from '@/constants'
 import { ModelInfo, ToolInfo } from '@/api/model'
-import { Button } from '@/components/ui/button'
-import { Share2 } from 'lucide-react'
-import { useAuth } from '@/contexts/AuthContext'
-import { useQueryClient } from '@tanstack/react-query'
 import MixedContent, { MixedContentImages, MixedContentText } from './Message/MixedContent'
 
 
@@ -73,9 +66,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const { t } = useTranslation()
   const [session, setSession] = useState<Session | null>(null)
   const { initCanvas, setInitCanvas } = useConfigs()
-  const { authStatus } = useAuth()
-  const [showShareDialog, setShowShareDialog] = useState(false)
-  const queryClient = useQueryClient()
   const { setCurrentContinuity, setCurrentVideoBrief, setStoryboardPlan } =
     useCanvas()
 
@@ -552,6 +542,14 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
       console.log('⭐️dispatching image_generated', data)
       setPending('image')
+      window.dispatchEvent(
+        new CustomEvent('app:refresh-canvas', {
+          detail: {
+            canvasId,
+            reason: 'image-generated-socket',
+          },
+        })
+      )
     },
     [canvasId, sessionId]
   )
@@ -589,13 +587,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
       setPending(false)
       scrollToBottom()
-
-      // 聊天输出完毕后更新余额
-      if (authStatus.is_logged_in) {
-        queryClient.invalidateQueries({ queryKey: ['balance'] })
-      }
     },
-    [sessionId, scrollToBottom, authStatus.is_logged_in, queryClient]
+    [sessionId, scrollToBottom]
   )
 
   const handleError = useCallback((data: TEvents['Socket::Session::Error']) => {
@@ -627,7 +620,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
       console.log('🎥 Chat received video_generated', data)
       setPending(false)
       window.dispatchEvent(
-        new CustomEvent('jaaz:refresh-canvas', {
+        new CustomEvent('app:refresh-canvas', {
           detail: {
             canvasId,
             reason: 'video-generated-socket',
@@ -769,13 +762,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   }
 
   const onClickNewChat = () => {
-    const newSession: Session = {
+      const newSession: Session = {
       id: nanoid(),
       title: t('chat:newChat'),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      model: session?.model || 'gpt-4o',
-      provider: session?.provider || 'openai',
+      model: session?.model || 'gpt-5.4',
+      provider: session?.provider || 'apipodcode',
     }
 
     setSessionList((prev) => [...prev, newSession])
@@ -837,19 +830,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
               onSelectSession={onSelectSession}
             />
           </div>
-
-          {/* Share Template Button */}
-          {/* {authStatus.is_logged_in && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="ml-2 shrink-0"
-              onClick={() => setShowShareDialog(true)}
-            >
-              <Share2 className="h-4 w-4 mr-1" />
-            </Button>
-          )} */}
-
           <Blur className='absolute top-0 left-0 right-0 h-full -z-1' />
         </header>
 
@@ -942,7 +922,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 transition={{ duration: 0.5 }}
                 className='text-muted-foreground text-3xl'
               >
-                <ShinyText text='Hello, Jaaz!' />
+                {`Hello, ${APP_NAME}!`}
               </motion.span>
               <motion.span
                 initial={{ opacity: 0, y: 10 }}
@@ -950,7 +930,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 transition={{ duration: 0.6 }}
                 className='text-muted-foreground text-2xl'
               >
-                <ShinyText text='How can I help you today?' />
+                {'How can I help you today?'}
               </motion.span>
             </motion.div>
           )}
@@ -963,16 +943,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
             messages={messages}
             onSendMessages={onSendMessages}
             onCancelChat={handleCancelChat}
-          />
-
-          {/* 魔法生成组件 */}
-          <ChatMagicGenerator
-            sessionId={sessionId || ''}
-            canvasId={canvasId}
-            messages={messages}
-            setMessages={setMessages}
-            setPending={setPending}
-            scrollToBottom={scrollToBottom}
           />
           <ChatCanvasVideoGenerator
             sessionId={sessionId || ''}
@@ -1000,15 +970,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
           />
         </div>
       </div>
-
-      {/* Share Template Dialog */}
-      <ShareTemplateDialog
-        open={showShareDialog}
-        onOpenChange={setShowShareDialog}
-        canvasId={canvasId}
-        sessionId={sessionId || ''}
-        messages={messages}
-      />
     </PhotoProvider>
   )
 }

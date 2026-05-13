@@ -13,6 +13,7 @@ from services.websocket_service import send_to_websocket
 from services.stream_service import add_stream_task, remove_stream_task
 from services.ad_generation_runtime import maybe_compile_ad_image_messages
 from models.config_model import ModelInfo
+from services.runtime_defaults import get_default_text_model, sanitize_tool_list
 
 
 async def handle_chat(data: Dict[str, Any]) -> None:
@@ -39,8 +40,8 @@ async def handle_chat(data: Dict[str, Any]) -> None:
     messages: List[Dict[str, Any]] = data.get('messages', [])
     session_id: str = data.get('session_id', '')
     canvas_id: str = data.get('canvas_id', '')
-    text_model: ModelInfo = data.get('text_model', {})
-    tool_list: List[ToolInfoJson] = data.get('tool_list', [])
+    text_model: ModelInfo = get_default_text_model()
+    tool_list: List[ToolInfoJson] = sanitize_tool_list(data.get('tool_list', []))
 
     print('👇 chat_service got tool_list', tool_list)
     print(

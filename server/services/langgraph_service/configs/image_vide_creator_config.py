@@ -71,9 +71,8 @@ You MUST:
 3. Pass the extracted file_id(s) in the input_images parameter as a list
 4. Prefer generate_image_by_gpt_image_2_edit_apipod when available for both standard generation and reference-image workflows
 5. When input_images are present, you MUST use a tool that supports input_images
-6. Only fall back to other image tools when generate_image_by_gpt_image_2_edit_apipod is unavailable
+6. If the image tool is temporarily unavailable, report the error clearly instead of switching providers
 7. For video generation → use video tools with input_images if images are present
-8. Never use generate_image_by_nano_banana for this workflow
 """
 
         batch_generation_prompt = """

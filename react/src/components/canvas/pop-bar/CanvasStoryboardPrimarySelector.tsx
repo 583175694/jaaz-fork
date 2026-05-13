@@ -35,7 +35,7 @@ const CanvasStoryboardPrimarySelector = ({
         description: shotId ? `镜头 ${shotId} 的主版本已更新` : undefined,
       })
       window.dispatchEvent(
-        new CustomEvent('jaaz:refresh-canvas', {
+        new CustomEvent('app:refresh-canvas', {
           detail: {
             canvasId,
             reason: 'storyboard-mark-primary',

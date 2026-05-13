@@ -13,7 +13,7 @@ async def config_exists():
 
 @router.get("")
 async def get_config():
-    return config_service.app_config
+    return config_service.get_public_config()
 
 
 @router.post("")

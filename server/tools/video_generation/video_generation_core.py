@@ -7,8 +7,6 @@ import traceback
 from typing import List, cast, Optional, Any
 from models.config_model import ModelInfo
 from ..video_providers.video_base_provider import get_default_provider, VideoProviderBase
-# Import all providers to ensure automatic registration (don't delete these imports)
-from ..video_providers.volces_provider import VolcesVideoProvider  # type: ignore
 from ..video_providers.apipod_provider import APIPodVideoProvider  # type: ignore
 from .video_canvas_utils import (
     send_video_start_notification,
@@ -24,7 +22,7 @@ def _get_video_provider_candidates(
     """Return provider candidates for the current video model only.
 
     The chat context passes all selected tools together. If we fall back to that
-    list without filtering, image tools such as `nanobanana` can be mistaken as
+    list without filtering, image tools can be mistaken as
     video providers and crash video generation with `Unknown provider`.
     """
     model_info = ctx.get("model_info", {})
@@ -105,7 +103,8 @@ async def generate_video_with_provider(
         if provider_hint:
             provider_name = provider_hint
         else:
-            # Use get_default_provider which already handles Jaaz prioritization
+            # Default provider selection is already restricted to the built-in
+            # production provider set.
             provider_name = get_default_provider(model_info_list)
 
         print(f"🎥 Using provider: {provider_name} for {model_name}")

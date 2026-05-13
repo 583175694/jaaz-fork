@@ -5,7 +5,7 @@ from services.db_service import db_service
 import asyncio
 import json
 import traceback
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 router = APIRouter(prefix="/api/canvas")
 
@@ -88,6 +88,33 @@ def _merge_persisted_video_data(
         "production": existing_data.get("production", incoming_data.get("production", {})),
     }
 
+
+def _normalize_canvas_persistence_data(data: Dict[str, Any]) -> Dict[str, Any]:
+    files = data.get("files", {})
+    file_map = files if isinstance(files, dict) else {}
+    normalized_elements: List[Any] = []
+
+    for raw_element in list(data.get("elements", []) or []):
+        if not isinstance(raw_element, dict):
+            normalized_elements.append(raw_element)
+            continue
+
+        element = dict(raw_element)
+        if element.get("type") == "image":
+            file_id = str(element.get("fileId", "") or "")
+            file_entry = file_map.get(file_id, {}) if file_id else {}
+            has_file_data = isinstance(file_entry, dict) and bool(
+                str(file_entry.get("dataURL", "") or "").strip()
+            )
+            if has_file_data:
+                element["status"] = "saved"
+        normalized_elements.append(element)
+
+    return {
+        **data,
+        "elements": normalized_elements,
+    }
+
 @router.get("/list")
 async def list_canvases():
     return await db_service.list_canvases()
@@ -135,15 +162,24 @@ async def create_canvas(request: Request):
 
 @router.get("/{id}")
 async def get_canvas(id: str):
-    return await db_service.get_canvas_data(id)
+    canvas = await db_service.get_canvas_data(id)
+    if not canvas:
+        return canvas
+
+    canvas_data = canvas.get("data", {})
+    if isinstance(canvas_data, dict):
+      canvas["data"] = _normalize_canvas_persistence_data(canvas_data)
+    return canvas
 
 @router.post("/{id}/save")
 async def save_canvas(id: str, request: Request):
     payload = await request.json()
-    incoming_data = payload["data"]
+    incoming_data = _normalize_canvas_persistence_data(payload["data"])
     existing_canvas = await db_service.get_canvas_data(id)
     existing_data = existing_canvas.get("data", {}) if existing_canvas else {}
-    merged_data = _merge_persisted_video_data(incoming_data, existing_data)
+    merged_data = _normalize_canvas_persistence_data(
+        _merge_persisted_video_data(incoming_data, existing_data)
+    )
     data_str = json.dumps(merged_data)
     await db_service.save_canvas_data(id, data_str, payload['thumbnail'])
     return {"id": id }

@@ -11,7 +11,7 @@ export type TCanvasAddImagesToChatEvent = {
   y?: number
 }[]
 
-export type TCanvasMagicGenerateEvent = {
+export type TCanvasImageRedrawEvent = {
   fileId: string
   base64: string
   width: number
@@ -85,7 +85,7 @@ export type TEvents = {
 
   // ********** Canvas events - Start **********
   'Canvas::AddImagesToChat': TCanvasAddImagesToChatEvent
-  'Canvas::MagicGenerate': TCanvasMagicGenerateEvent
+  'Canvas::ImageRedraw': TCanvasImageRedrawEvent
   'Canvas::GenerateVideo': TCanvasGenerateVideoEvent
   'Canvas::GenerateStoryboard': TCanvasGenerateStoryboardEvent
   'Canvas::GenerateMultiview': TCanvasGenerateMultiviewEvent

@@ -4,7 +4,7 @@ import { notarize } from "@electron/notarize";
 export default async function notarizing(context) {
   const { electronPlatformName, appOutDir } = context;
   if (electronPlatformName !== "darwin") return;
-  const appPath = `${appOutDir}/Jaaz.app`;
+  const appPath = `${appOutDir}/AI Studio.app`;
   console.log("appPath", appPath);
   return await notarize({
     appPath,

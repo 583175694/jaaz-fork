@@ -1,9 +1,6 @@
 import { useCanvas } from '@/contexts/canvas'
 import { TCanvasAddImagesToChatEvent } from '@/lib/event'
-import {
-  ExcalidrawImageElement,
-  OrderedExcalidrawElement,
-} from '@excalidraw/excalidraw/element/types'
+import { ExcalidrawImageElement } from '@excalidraw/excalidraw/element/types'
 import { AnimatePresence } from 'motion/react'
 import { useRef, useState } from 'react'
 import CanvasPopbarContainer from './CanvasPopbarContainer'
@@ -13,20 +10,17 @@ const CanvasPopbarWrapper = () => {
 
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
   const [showAddToChat, setShowAddToChat] = useState(false)
-  const [showMagicGenerate, setShowMagicGenerate] = useState(false)
   const [showGenerateVideo, setShowGenerateVideo] = useState(false)
   const [showGenerateStoryboard, setShowGenerateStoryboard] = useState(false)
   const [showGenerateMultiview, setShowGenerateMultiview] = useState(false)
 
   const selectedImagesRef = useRef<TCanvasAddImagesToChatEvent>([])
-  const selectedElementsRef = useRef<OrderedExcalidrawElement[]>([])
 
   excalidrawAPI?.onChange((elements, appState, files) => {
     const selectedIds = appState.selectedElementIds
     if (Object.keys(selectedIds).length === 0) {
       setPos(null)
       setShowAddToChat(false)
-      setShowMagicGenerate(false)
       setShowGenerateVideo(false)
       setShowGenerateStoryboard(false)
       setShowGenerateMultiview(false)
@@ -45,12 +39,7 @@ const CanvasPopbarWrapper = () => {
     setShowGenerateStoryboard(hasSingleSelectedImage)
     setShowGenerateMultiview(hasSingleSelectedImage)
 
-    // 判断是否显示魔法生成按钮：选中2个以上元素（包含所有类型）
-    const selectedCount = Object.keys(selectedIds).length
-    setShowMagicGenerate(selectedCount >= 2)
-
-    // 如果既没有选中图片，也没有满足魔法生成条件，隐藏弹窗
-    if (!hasSelectedImages && selectedCount < 2) {
+    if (!hasSelectedImages) {
       setPos(null)
       return
     }
@@ -73,40 +62,14 @@ const CanvasPopbarWrapper = () => {
         }
       })
 
-    // 处理选中的元素数据
-    selectedElementsRef.current = elements.filter(
-      (element) => selectedIds[element.id] && element.index !== null
-    ) as OrderedExcalidrawElement[]
+    const centerX =
+      selectedImages.reduce((acc, image) => acc + image.x + image.width / 2, 0) /
+      selectedImages.length
 
-    // 计算位置：如果有图片，基于图片；否则基于所有选中的元素
-    let centerX: number
-    let bottomY: number
-
-    if (hasSelectedImages) {
-      // 基于选中的图片计算位置
-      centerX =
-        selectedImages.reduce((acc, image) => acc + image.x + image.width / 2, 0) /
-        selectedImages.length
-
-      bottomY = selectedImages.reduce(
-        (acc, image) => Math.max(acc, image.y + image.height),
-        Number.NEGATIVE_INFINITY
-      )
-    } else {
-      // 基于所有选中的元素计算位置
-      const selectedElements = elements.filter((element) => selectedIds[element.id])
-
-      centerX =
-        selectedElements.reduce(
-          (acc, element) => acc + element.x + (element.width || 0) / 2,
-          0
-        ) / selectedElements.length
-
-      bottomY = selectedElements.reduce(
-        (acc, element) => Math.max(acc, element.y + (element.height || 0)),
-        Number.NEGATIVE_INFINITY
-      )
-    }
+    const bottomY = selectedImages.reduce(
+      (acc, image) => Math.max(acc, image.y + image.height),
+      Number.NEGATIVE_INFINITY
+    )
 
     const scrollX = appState.scrollX
     const scrollY = appState.scrollY
@@ -120,13 +83,11 @@ const CanvasPopbarWrapper = () => {
   return (
     <div className='absolute left-0 bottom-0 w-full h-full z-20 pointer-events-none'>
       <AnimatePresence>
-        {pos && (showAddToChat || showMagicGenerate) && (
+        {pos && showAddToChat && (
           <CanvasPopbarContainer
             pos={pos}
             selectedImages={selectedImagesRef.current}
-            selectedElements={selectedElementsRef.current}
             showAddToChat={showAddToChat}
-            showMagicGenerate={showMagicGenerate}
             showGenerateVideo={showGenerateVideo}
             showGenerateStoryboard={showGenerateStoryboard}
             showGenerateMultiview={showGenerateMultiview}

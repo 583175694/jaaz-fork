@@ -100,18 +100,6 @@ REFERENCE_IMAGE_TOOL_MAPPING: Dict[str, Dict[str, str]] = {
         "provider": "apipodgptimage",
         "model": "gpt-image-2-edit",
     },
-    "generate_image_by_flux_kontext_pro_jaaz": {
-        "provider": "jaaz",
-        "model": "black-forest-labs/flux-kontext-pro",
-    },
-    "generate_image_by_flux_kontext_max_jaaz": {
-        "provider": "jaaz",
-        "model": "black-forest-labs/flux-kontext-max",
-    },
-    "generate_image_by_flux_kontext_max": {
-        "provider": "jaaz",
-        "model": "black-forest-labs/flux-kontext-max",
-    },
 }
 
 
@@ -188,12 +176,7 @@ def _resolve_reference_tool(requested_tool_id: str) -> Dict[str, str]:
             **REFERENCE_IMAGE_TOOL_MAPPING[requested_tool_id],
         }
 
-    for tool_id in (
-        "generate_image_by_gpt_image_2_edit_apipod",
-        "generate_image_by_flux_kontext_pro_jaaz",
-        "generate_image_by_flux_kontext_max_jaaz",
-        "generate_image_by_flux_kontext_max",
-    ):
+    for tool_id in ("generate_image_by_gpt_image_2_edit_apipod",):
         if tool_id in registered_tools and tool_id in REFERENCE_IMAGE_TOOL_MAPPING:
             return {
                 "tool_id": tool_id,
@@ -201,7 +184,7 @@ def _resolve_reference_tool(requested_tool_id: str) -> Dict[str, str]:
             }
 
     raise RuntimeError(
-        "No reference-image capable image tool is configured. Please enable GPT Image 2 Edit or Flux Kontext."
+        "No reference-image capable image tool is configured. Please enable the APIPod GPT Image tool."
     )
 
 

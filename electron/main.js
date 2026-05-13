@@ -6,7 +6,7 @@ const path = require('path')
 const os = require('os')
 // to import a ts module, we need to import like below
 // const gemini = require('./dist/gemin_service')
-const logPath = path.join(os.homedir(), 'jaaz-log.txt')
+const logPath = path.join(os.homedir(), 'ai-studio-log.txt')
 // Check if the log file exists and delete it
 if (fs.existsSync(logPath)) {
   fs.unlinkSync(logPath)
@@ -30,7 +30,7 @@ console.error = (...args) => {
 }
 
 // Initial log entry
-console.log('🟢 Jaaz Electron app starting...')
+console.log('🟢 AI Studio Electron app starting...')
 
 const { app, BrowserWindow, ipcMain, dialog, session } = require('electron')
 const { spawn } = require('child_process')
@@ -113,7 +113,7 @@ autoUpdater.on('download-progress', (progressObj) => {
 })
 
 autoUpdater.on('update-downloaded', (info) => {
-  console.log('new Jaaz version downloaded:', info.version)
+  console.log('new AI Studio version downloaded:', info.version)
 
   // send message to renderer process
   if (mainWindow) {
@@ -125,7 +125,7 @@ const createWindow = (pyPort) => {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    icon: path.join(__dirname, '../assets/icons/jaaz.png'), // ✅ Use .png for dev
+    icon: path.join(__dirname, '../assets/icons/unicorn.png'),
     autoHideMenuBar: true, // Hide menu bar (can be toggled with Alt key)
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -159,8 +159,8 @@ const createWindow = (pyPort) => {
     const newWindow = new BrowserWindow({
       width: 800,
       height: 600,
-      title: 'Jaaz Preview',
-      icon: path.join(__dirname, '../assets/icons/jaaz.png'),
+      title: 'AI Studio Preview',
+      icon: path.join(__dirname, '../assets/icons/unicorn.png'),
       autoHideMenuBar: true,
       webPreferences: {
         nodeIntegration: false,
@@ -235,7 +235,7 @@ const startPythonApi = async () => {
 
   // Set BASE_API_URL based on environment
   env.BASE_API_URL =
-    process.env.NODE_ENV === 'development' ? 'http://localhost:3000' : 'https://jaaz.app'
+    process.env.NODE_ENV === 'development' ? 'http://localhost:3000' : ''
   console.log('BASE_API_URL:', env.BASE_API_URL)
 
   // Apply proxy settings and get environment variables

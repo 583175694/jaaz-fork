@@ -2,9 +2,6 @@
 export { default as ChatInterface } from './components/chat/Chat'
 export { default as ChatTextarea } from './components/chat/ChatTextarea'
 export { default as ChatHistory } from './components/chat/ChatHistory'
-export { default as ChatMagicGenerator } from './components/chat/ChatMagicGenerator'
-export { default as ModelSelector } from './components/chat/ModelSelector'
-export { default as ModelSelectorV2 } from './components/chat/ModelSelectorV2'
 export { default as SessionSelector } from './components/chat/SessionSelector'
 export { default as ChatSpinner } from './components/chat/Spinner'
 
@@ -146,7 +143,6 @@ export {
 } from './components/ui/sidebar'
 
 // Auth Components
-export { LoginDialog } from './components/auth/LoginDialog'
 export { UserMenu } from './components/auth/UserMenu'
 
 // Common Components
@@ -174,7 +170,6 @@ export { ConfigsProvider, useConfigs } from './contexts/configs'
 export { CanvasProvider, useCanvas } from './contexts/canvas'
 
 // Hooks
-export { useBalance } from './hooks/use-balance'
 export { default as useDebounce } from './hooks/use-debounce'
 export { useLanguage } from './hooks/use-language'
 export { useTheme } from './hooks/use-theme'

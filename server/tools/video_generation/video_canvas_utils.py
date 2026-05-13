@@ -259,7 +259,7 @@ async def get_video_info_and_save(
             if attempt < max_attempts:
                 temp_probe = tempfile.NamedTemporaryFile(
                     suffix=".mp4",
-                    prefix="jaaz_video_probe_",
+                    prefix="app_video_probe_",
                     delete=False,
                 )
                 temp_probe.close()

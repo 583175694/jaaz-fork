@@ -6,9 +6,6 @@ import { dataURLToFile } from '@/lib/utils'
 
 const REFERENCE_IMAGE_TOOL_IDS = [
   'generate_image_by_gpt_image_2_edit_apipod',
-  'generate_image_by_flux_kontext_pro_jaaz',
-  'generate_image_by_flux_kontext_max_jaaz',
-  'generate_image_by_flux_kontext_max',
 ] as const
 
 export const getPreferredReferenceImageToolId = (

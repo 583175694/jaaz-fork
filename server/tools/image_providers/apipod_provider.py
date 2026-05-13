@@ -18,18 +18,18 @@ class APIPodImageProvider(ImageProviderBase):
     """APIPod async image generation provider."""
 
     def _get_config(self) -> dict[str, Any]:
-        config = config_service.app_config.get("nanobanana", {})
+        config = config_service.app_config.get("apipodgptimage", {})
         if not config:
             config_file = getattr(config_service, "config_file", "")
             if config_file and os.path.exists(config_file):
                 loaded = toml.load(config_file)
-                config = loaded.get("nanobanana", {})
+                config = loaded.get("apipodgptimage", {})
         api_key = str(config.get("api_key", ""))
         api_url = str(config.get("url", "")).strip()
         if not api_key:
-            raise ValueError("Nano Banana API key is not configured")
+            raise ValueError("APIPod image API key is not configured")
         if not api_url:
-            raise ValueError("Nano Banana API URL is not configured")
+            raise ValueError("APIPod image API URL is not configured")
         return config
 
     def _build_headers(self, api_key: str) -> dict[str, str]:
@@ -137,7 +137,7 @@ class APIPodImageProvider(ImageProviderBase):
                         continue
                     if response.status >= 400:
                         raise RuntimeError(
-                            "Nano Banana status query failed "
+                            "APIPod image status query failed "
                             f"url={status_url} status={response.status} body={text[:500]}"
                         )
 
@@ -145,7 +145,7 @@ class APIPodImageProvider(ImageProviderBase):
                         result = json.loads(text)
                     except Exception as exc:
                         raise RuntimeError(
-                            f"Nano Banana status returned invalid JSON url={status_url}"
+                            f"APIPod image status returned invalid JSON url={status_url}"
                         ) from exc
                     break
 
@@ -164,7 +164,7 @@ class APIPodImageProvider(ImageProviderBase):
 
                 await asyncio.sleep(3)
 
-        raise RuntimeError(f"Nano Banana task timed out ({max_wait}s), task_id={task_id}")
+        raise RuntimeError(f"APIPod image task timed out ({max_wait}s), task_id={task_id}")
 
     async def generate(
         self,
@@ -178,7 +178,7 @@ class APIPodImageProvider(ImageProviderBase):
         config = self._get_config()
         api_key = str(config.get("api_key", ""))
         api_url = str(config.get("url", "")).strip()
-        model_name = str(config.get("model_name", model or "nano-banana-pro"))
+        model_name = str(config.get("model_name", model or "gpt-image-2"))
         max_wait = float(config.get("max_wait_seconds", 600))
 
         payload = self._build_payload(
@@ -199,7 +199,7 @@ class APIPodImageProvider(ImageProviderBase):
 
                 if response.status >= 400:
                     raise RuntimeError(
-                        "Nano Banana request failed "
+                        "APIPod image request failed "
                         f"status={response.status} body={text[:500]}"
                     )
 
@@ -207,7 +207,7 @@ class APIPodImageProvider(ImageProviderBase):
                     result = json.loads(text)
                 except Exception as exc:
                     raise RuntimeError(
-                        f"Nano Banana returned invalid JSON body={text[:500]}"
+                        f"APIPod image returned invalid JSON body={text[:500]}"
                     ) from exc
 
             image_url = self._extract_image_url(result)
@@ -215,7 +215,7 @@ class APIPodImageProvider(ImageProviderBase):
                 task_id = self._extract_task_id(result)
                 if not task_id:
                     raise RuntimeError(
-                        "Nano Banana response missing image URL and task id"
+                        "APIPod image response missing image URL and task id"
                     )
                 result = await self._poll_task(
                     task_id, api_key, api_url, max_wait=max_wait

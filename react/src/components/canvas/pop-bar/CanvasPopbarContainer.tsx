@@ -2,8 +2,6 @@ import { useCanvas } from '@/contexts/canvas'
 import { TCanvasAddImagesToChatEvent } from '@/lib/event'
 import { motion } from 'motion/react'
 import { memo } from 'react'
-import { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types'
-import CanvasMagicGenerator from './CanvasMagicGenerator'
 import CanvasPopbar from './CanvasPopbar'
 import CanvasMultiviewGenerator from './CanvasMultiviewGenerator'
 import CanvasStoryboardGenerator from './CanvasStoryboardGenerator'
@@ -12,9 +10,7 @@ import CanvasVideoGenerator from './CanvasVideoGenerator'
 type CanvasPopbarContainerProps = {
     pos: { x: number; y: number }
     selectedImages: TCanvasAddImagesToChatEvent
-    selectedElements: OrderedExcalidrawElement[]
     showAddToChat: boolean
-    showMagicGenerate: boolean
     showGenerateVideo: boolean
     showGenerateStoryboard: boolean
     showGenerateMultiview: boolean
@@ -23,9 +19,7 @@ type CanvasPopbarContainerProps = {
 const CanvasPopbarContainer = ({
     pos,
     selectedImages,
-    selectedElements,
     showAddToChat,
-    showMagicGenerate,
     showGenerateVideo,
     showGenerateStoryboard,
     showGenerateMultiview
@@ -55,9 +49,6 @@ const CanvasPopbarContainer = ({
                 )}
                 {showGenerateMultiview && (
                     <CanvasMultiviewGenerator selectedImages={selectedImages} />
-                )}
-                {showMagicGenerate && (
-                    <CanvasMagicGenerator selectedImages={selectedImages} selectedElements={selectedElements} />
                 )}
             </div>
         </motion.div>

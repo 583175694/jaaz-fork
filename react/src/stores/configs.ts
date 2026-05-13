@@ -21,12 +21,6 @@ type ConfigsStore = {
   showUpdateDialog: boolean
   setShowUpdateDialog: (show: boolean) => void
 
-  showSettingsDialog: boolean
-  setShowSettingsDialog: (show: boolean) => void
-
-  showLoginDialog: boolean
-  setShowLoginDialog: (show: boolean) => void
-
   allTools: ToolInfo[]
   setAllTools: (tools: ToolInfo[]) => void
 
@@ -51,12 +45,6 @@ const useConfigsStore = create<ConfigsStore>((set) => ({
 
   showUpdateDialog: false,
   setShowUpdateDialog: (show) => set({ showUpdateDialog: show }),
-
-  showSettingsDialog: false,
-  setShowSettingsDialog: (show) => set({ showSettingsDialog: show }),
-
-  showLoginDialog: false,
-  setShowLoginDialog: (show) => set({ showLoginDialog: show }),
 
   providers: {},
   setProviders: (providers) => set({ providers }),

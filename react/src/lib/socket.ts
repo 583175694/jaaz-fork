@@ -152,7 +152,7 @@ export class SocketIOManager {
       case ISocket.SessionEventType.Info:
         eventBus.emit('Socket::Session::Info', data)
         break
-      case 'video_generation_started':
+      case ISocket.SessionEventType.VideoGenerationStarted:
         eventBus.emit('Socket::Session::Info', {
           session_id,
           type: ISocket.SessionEventType.Info,
