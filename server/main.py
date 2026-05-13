@@ -99,11 +99,6 @@ async def serve_app_logo_svg():
     return no_cache_file_response(os.path.join(react_build_dir, "app-logo.svg"))
 
 
-@app.get("/jaaz.png")
-async def serve_jaaz_logo():
-    return no_cache_file_response(os.path.join(react_build_dir, "jaaz.png"))
-
-
 @app.get("/unicorn.png")
 async def serve_unicorn_logo():
     return no_cache_file_response(os.path.join(react_build_dir, "unicorn.png"))

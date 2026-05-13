@@ -23,14 +23,20 @@ export const TOOL_CALL_NAME_MAPPING: { [key in ToolCallFunctionName]: string } =
     generate_storyboard_from_main_image: 'Generate Storyboard',
     generate_multiview_variant: 'Generate Multiview Variant',
     generate_video_from_storyboard: 'Generate Video',
+    generate_video_by_veo3_apipod: 'Google Veo 3.1',
     prompt_user_multi_choice: 'Prompt Multi-Choice',
     prompt_user_single_choice: 'Prompt Single-Choice',
     write_plan: 'Write Plan',
     finish: 'Finish',
   }
 
-;(TOOL_CALL_NAME_MAPPING as Record<string, string>)['generate_video_by_veo3_apipod'] =
-  'Google Veo 3.1'
+export const TOOL_CALL_STATUS_LABELS: Record<string, string> = {
+  generate_image: '正在生成图片',
+  generate_storyboard_from_main_image: '正在生成分镜',
+  generate_multiview_variant: '正在生成多视角',
+  generate_video_from_storyboard: '正在生成视频',
+  generate_video_by_veo3_apipod: '正在生成视频',
+}
 
 export const LOGO_URL = '/app-logo.png'
 

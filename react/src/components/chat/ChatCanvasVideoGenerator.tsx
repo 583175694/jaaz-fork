@@ -99,7 +99,7 @@ const ChatCanvasVideoGenerator: React.FC<ChatCanvasVideoGeneratorProps> = ({
           content: [
             {
               type: 'text',
-              text: data.finalPrompt,
+              text: data.userPrompt,
             },
             ...resolvedImages.map((image) => ({
               type: 'image_url' as const,

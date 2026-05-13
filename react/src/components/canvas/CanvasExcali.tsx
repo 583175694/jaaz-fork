@@ -19,6 +19,7 @@ import {
   BinaryFileData,
   BinaryFiles,
   ExcalidrawInitialDataState,
+  UIOptions,
 } from '@excalidraw/excalidraw/types'
 import { useCallback, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -54,6 +55,35 @@ const STORYBOARD_ROLE_LABELS: Record<string, string> = {
   visual_mother_frame: '参考图',
 }
 
+const CANVAS_ALLOWED_TOOLS = new Set(['selection', 'hand'])
+const BLOCKED_CANVAS_SHORTCUTS = new Set([
+  'r',
+  'o',
+  'a',
+  'l',
+  'p',
+  'd',
+  't',
+  'e',
+  'x',
+  'i',
+])
+
+const CANVAS_UI_OPTIONS: Partial<UIOptions> = {
+  tools: {
+    image: false,
+  },
+  canvasActions: {
+    changeViewBackgroundColor: false,
+    clearCanvas: false,
+    export: false,
+    loadScene: false,
+    saveToActiveFile: false,
+    saveAsImage: false,
+    toggleTheme: false,
+  },
+}
+
 type CanvasExcaliProps = {
   canvasId: string
   initialData?: ExcalidrawInitialDataState
@@ -84,6 +114,7 @@ const normalizeCanvasInitialData = (
       const file = fileId ? files[fileId] : undefined
       return {
         ...element,
+        locked: true,
         status: file?.dataURL ? 'saved' : element.status,
       }
     }
@@ -103,6 +134,7 @@ const normalizeCanvasInitialData = (
       ...element,
       type: 'embeddable' as const,
       link,
+      locked: true,
       customData: {
         migratedFromVideo: true,
       },
@@ -805,6 +837,12 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
       return
     }
 
+    if (!CANVAS_ALLOWED_TOOLS.has(String(appState.activeTool?.type || 'selection'))) {
+      queueMicrotask(() => {
+        excalidrawAPI?.setActiveTool({ type: 'selection' })
+      })
+    }
+
     // Immediate UI updates
     handleSelectionChange(elements, appState)
     // Debounced save operation
@@ -953,6 +991,43 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
     }
   }, [canvasId, excalidrawAPI, initialData, mainImageFileId])
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target?.isContentEditable
+      ) {
+        return
+      }
+
+      const excalidrawRoot = document.querySelector('.excalidraw')
+      if (!excalidrawRoot || !target || !excalidrawRoot.contains(target)) {
+        return
+      }
+
+      const key = event.key.toLowerCase()
+      const isModifierCombo = event.metaKey || event.ctrlKey
+
+      if (
+        key === 'delete' ||
+        key === 'backspace' ||
+        BLOCKED_CANVAS_SHORTCUTS.has(key) ||
+        (isModifierCombo && ['c', 'v', 'x', 'z', 'y'].includes(key))
+      ) {
+        event.preventDefault()
+        event.stopPropagation()
+        excalidrawAPI?.setActiveTool({ type: 'selection' })
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown, true)
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown, true)
+    }
+  }, [excalidrawAPI])
+
   const addImageToExcalidraw = useCallback(
     async (imageElement: ExcalidrawImageElement, file: BinaryFileData) => {
       if (!excalidrawAPI) return
@@ -975,17 +1050,16 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
         height: imageElement.height,
       })
 
-      // Ensure image is not locked and can be manipulated
-      const unlockedImageElement = {
+      const lockedImageElement = {
         ...imageElement,
-        locked: false,
+        locked: true,
         groupIds: [],
         isDeleted: false,
         status: 'saved' as const,
       }
 
       excalidrawAPI.updateScene({
-        elements: [...(currentElements || []), unlockedImageElement],
+        elements: [...(currentElements || []), lockedImageElement],
       })
 
       localStorage.setItem(
@@ -1039,7 +1113,7 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
             version: 1,
             versionNonce: Math.random(),
             // 添加必需的状态属性
-            locked: false,
+            locked: true,
             isDeleted: false,
             groupIds: [],
             // 添加绑定框属性
@@ -1211,6 +1285,7 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
         langCode={i18n.language}
         excalidrawAPI={(api) => {
           setExcalidrawAPI(api)
+          api.setActiveTool({ type: 'selection' })
         }}
         onChange={handleChange}
         initialData={() => {
@@ -1237,8 +1312,11 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
           console.log('👇 Validating embeddable URL:', url)
           return true
         }}
+        UIOptions={CANVAS_UI_OPTIONS}
+        renderTopRightUI={() => null}
         viewModeEnabled={false}
         zenModeEnabled={false}
+        handleKeyboardGlobally={true}
         onPointerUpdate={(payload) => {
           if (payload.button === 'down' && Math.random() < 0.05) {
             return

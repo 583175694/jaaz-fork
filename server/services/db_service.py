@@ -2,13 +2,15 @@ import sqlite3
 import json
 import os
 import re
+from urllib.parse import urlparse
 from typing import List, Dict, Any, Optional
 import aiosqlite
 from .config_service import USER_DATA_DIR
 from .migrations.manager import MigrationManager, CURRENT_VERSION
 
 DB_PATH = os.path.join(USER_DATA_DIR, "localmanus.db")
-CANVAS_FILE_URL_ID_PATTERN = re.compile(r"^/api/file/(im_[^/?#]+|vi_[^/?#]+)$")
+CANVAS_FILE_URL_ID_PATTERN = re.compile(r"/api/file/((?:im_|vi_)[^/?#.)]+)")
+MARKDOWN_IMAGE_URL_PATTERN = re.compile(r"(!\[[^\]]*]\()([^)]+)(\))")
 
 class DatabaseService:
     def __init__(self):
@@ -134,49 +136,56 @@ class DatabaseService:
         message: Dict[str, Any],
         canvas_data: Dict[str, Any],
     ) -> Dict[str, Any]:
-        content = message.get("content")
-        if not isinstance(content, list):
-            return message
-
         files = canvas_data.get("files", {}) if isinstance(canvas_data, dict) else {}
         if not isinstance(files, dict) or not files:
+            return message
+
+        file_url_lookup = self._build_canvas_file_url_lookup(files)
+        content = message.get("content")
+        if not isinstance(content, list):
             return message
 
         updated = False
         normalized_content: List[Any] = []
         for item in content:
-            if not isinstance(item, dict) or item.get("type") != "image_url":
+            if not isinstance(item, dict):
                 normalized_content.append(item)
                 continue
 
-            image_url = item.get("image_url", {})
-            url = image_url.get("url", "") if isinstance(image_url, dict) else ""
-            if not isinstance(url, str):
+            if item.get("type") == "image_url":
+                image_url = item.get("image_url", {})
+                url = image_url.get("url", "") if isinstance(image_url, dict) else ""
+                resolved_url = self._resolve_canvas_asset_url(url, file_url_lookup)
+                if resolved_url and resolved_url != url:
+                    normalized_content.append({
+                        **item,
+                        "image_url": {
+                            **image_url,
+                            "url": resolved_url,
+                        },
+                    })
+                    updated = True
+                else:
+                    normalized_content.append(item)
+                continue
+
+            if item.get("type") != "text":
                 normalized_content.append(item)
                 continue
 
-            match = CANVAS_FILE_URL_ID_PATTERN.match(url.strip())
-            if not match:
+            text = item.get("text", "")
+            if not isinstance(text, str) or "/api/file/" not in text:
                 normalized_content.append(item)
                 continue
 
-            file_id = match.group(1)
-            canvas_file = files.get(file_id, {})
-            resolved_url = (
-                canvas_file.get("dataURL", "")
-                if isinstance(canvas_file, dict)
-                else ""
-            )
-            if not isinstance(resolved_url, str) or not resolved_url.strip():
+            normalized_text = self._normalize_markdown_asset_urls(text, file_url_lookup)
+            if normalized_text == text:
                 normalized_content.append(item)
                 continue
 
             normalized_content.append({
                 **item,
-                "image_url": {
-                    **image_url,
-                    "url": resolved_url,
-                },
+                "text": normalized_text,
             })
             updated = True
 
@@ -187,6 +196,76 @@ class DatabaseService:
             **message,
             "content": normalized_content,
         }
+
+    def _build_canvas_file_url_lookup(self, files: Dict[str, Any]) -> Dict[str, str]:
+        lookup: Dict[str, str] = {}
+        for file_id, file_value in files.items():
+            if not isinstance(file_value, dict):
+                continue
+            resolved_url = file_value.get("dataURL", "")
+            if not isinstance(resolved_url, str) or not resolved_url.strip():
+                continue
+            resolved_url = resolved_url.strip()
+            lookup[file_id] = resolved_url
+            lookup[f"/api/file/{file_id}"] = resolved_url
+            lookup[self._strip_origin(f"/api/file/{file_id}")] = resolved_url
+        return lookup
+
+    def _strip_origin(self, url: str) -> str:
+        try:
+            parsed = urlparse(url)
+        except Exception:
+            return url.strip()
+
+        if not parsed.scheme or not parsed.netloc:
+            return url.strip()
+
+        path = parsed.path or ""
+        if parsed.query:
+            path = f"{path}?{parsed.query}"
+        if parsed.fragment:
+            path = f"{path}#{parsed.fragment}"
+        return path.strip()
+
+    def _resolve_canvas_asset_url(
+        self,
+        url: Any,
+        file_url_lookup: Dict[str, str],
+    ) -> Optional[str]:
+        if not isinstance(url, str):
+            return None
+        normalized_url = url.strip()
+        if not normalized_url:
+            return None
+
+        direct = file_url_lookup.get(normalized_url)
+        if direct:
+            return direct
+
+        originless = self._strip_origin(normalized_url)
+        direct_originless = file_url_lookup.get(originless)
+        if direct_originless:
+            return direct_originless
+
+        match = CANVAS_FILE_URL_ID_PATTERN.search(normalized_url)
+        if not match:
+            return None
+
+        return file_url_lookup.get(match.group(1))
+
+    def _normalize_markdown_asset_urls(
+        self,
+        text: str,
+        file_url_lookup: Dict[str, str],
+    ) -> str:
+        def replace(match: re.Match[str]) -> str:
+            original_url = match.group(2)
+            resolved_url = self._resolve_canvas_asset_url(original_url, file_url_lookup)
+            if not resolved_url:
+                return match.group(0)
+            return f"{match.group(1)}{resolved_url}{match.group(3)}"
+
+        return MARKDOWN_IMAGE_URL_PATTERN.sub(replace, text)
 
     async def list_sessions(self, canvas_id: str) -> List[Dict[str, Any]]:
         """List all chat sessions"""

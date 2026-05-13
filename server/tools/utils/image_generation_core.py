@@ -174,4 +174,7 @@ async def generate_image_with_provider(
         },
     )
 
-    return f"image generated successfully ![image_id: {filename}](http://localhost:{DEFAULT_PORT}{image_url})"
+    final_url = image_url
+    if isinstance(final_url, str) and final_url.startswith('/'):
+        final_url = f"http://localhost:{DEFAULT_PORT}{final_url}"
+    return f"image generated successfully ![image_id: {filename}]({final_url})"

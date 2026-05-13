@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button'
 import { useCanvas } from '@/contexts/canvas'
-import { memo, useState, useEffect } from 'react'
+import { memo, useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import ReactMarkdown, { Components } from 'react-markdown'
 import { PhotoView } from 'react-photo-view'
@@ -14,10 +14,18 @@ type MarkdownProps = {
 const NonMemoizedMarkdown: React.FC<MarkdownProps> = ({ children }) => {
   const { excalidrawAPI } = useCanvas()
   const files = excalidrawAPI?.getFiles()
-  const filesArray = Object.keys(files || {}).map((key) => ({
-    id: key,
-    url: files![key].dataURL,
-  }))
+  const fileUrlIndex = useMemo(() => {
+    const index = new Map<string, string>()
+    Object.keys(files || {}).forEach((key) => {
+      const url = files?.[key]?.dataURL
+      if (!url) {
+        return
+      }
+      index.set(String(url), key)
+      index.set(`/api/file/${key}`, key)
+    })
+    return index
+  }, [files])
 
   const { t } = useTranslation()
   const [isThinkExpanded, setIsThinkExpanded] = useState(false)
@@ -208,7 +216,10 @@ const NonMemoizedMarkdown: React.FC<MarkdownProps> = ({ children }) => {
       )
     },
     img: ({ node, children, ...props }) => {
-      const id = filesArray.find((file) => props.src?.includes(file.url))?.id
+      const imageUrl = String(props.src || '')
+      const id =
+        fileUrlIndex.get(imageUrl) ||
+        Array.from(fileUrlIndex.entries()).find(([url]) => imageUrl.includes(url))?.[1]
 
       // 检查alt文本是否包含video_id标识，这表示这是一个视频文件
       const isVideo = props.alt && props.alt.includes('video_id:')
@@ -267,7 +278,10 @@ const NonMemoizedMarkdown: React.FC<MarkdownProps> = ({ children }) => {
       )
     },
     video: ({ node, children, ...props }) => {
-      const id = filesArray.find((file) => props.src?.includes(file.url))?.id
+      const videoUrl = String(props.src || '')
+      const id =
+        fileUrlIndex.get(videoUrl) ||
+        Array.from(fileUrlIndex.entries()).find(([url]) => videoUrl.includes(url))?.[1]
       return (
         <span className="group block relative overflow-hidden rounded-md my-2 last:mb-4">
           <video

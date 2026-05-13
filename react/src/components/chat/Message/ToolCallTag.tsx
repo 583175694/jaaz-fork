@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/button'
-import { TOOL_CALL_NAME_MAPPING } from '@/constants'
+import { TOOL_CALL_STATUS_LABELS } from '@/constants'
 import { ToolCall } from '@/types/types'
 import {
   ChevronDown,
@@ -29,6 +29,45 @@ const CONFIRMATION_TOOL_NAMES = new Set([
   'generate_multiview_variant',
   'generate_video_from_storyboard',
 ])
+
+const resolveToolCallSummary = (toolCall: ToolCall) => {
+  const toolName = String(toolCall.function.name)
+  const result = String(toolCall.result || '').trim()
+
+  if (result.includes('工具调用已取消')) {
+    return '已取消本次生成'
+  }
+  if (result.includes('已返回修改')) {
+    return '已返回修改'
+  }
+  if (result.includes('确认已超时')) {
+    return '确认已超时'
+  }
+  if (toolName === 'generate_storyboard_from_main_image') {
+    const matches = result.match(/(\d+)\s*张/)
+    if (matches?.[1]) {
+      return `已生成 ${matches[1]} 张分镜图`
+    }
+    if (result) {
+      return '已生成分镜'
+    }
+  }
+  if (toolName === 'generate_multiview_variant' && result) {
+    return '已生成多视角'
+  }
+  if (
+    (toolName === 'generate_video_from_storyboard' ||
+      toolName === 'generate_video_by_veo3_apipod') &&
+    result
+  ) {
+    return '已生成视频'
+  }
+  if (toolName === 'generate_image' && result) {
+    return '已生成图片'
+  }
+
+  return TOOL_CALL_STATUS_LABELS[toolName] || '处理中'
+}
 
 type ToolCallTagProps = {
   toolCall: ToolCall
@@ -118,18 +157,20 @@ const ToolCallTag: React.FC<ToolCallTagProps> = ({
           : null
       : null
 
+  const summaryLabel = resolveToolCallSummary(toolCall)
+
   // 普通模式的样式
   return (
-    <div className="bg-green-50 dark:bg-green-950/50 border border-green-200 dark:border-green-800 rounded-md shadow-sm overflow-hidden">
+    <div className="overflow-hidden rounded-xl border border-border/70 bg-background/70 shadow-sm backdrop-blur-sm">
       {/* Header */}
       <div
-        className="flex items-center justify-between p-3 cursor-pointer hover:bg-green-100/50 dark:hover:bg-green-900/30 transition-colors"
+        className="flex cursor-pointer items-center justify-between p-3 transition-colors hover:bg-muted/40"
         onClick={onToggleExpand}
       >
         <div className="flex items-center gap-2">
-          <div className="bg-green-200/70 dark:bg-green-800 p-1 rounded">
+          <div className="rounded-md bg-muted p-1.5 text-muted-foreground">
             <svg
-              className="w-4 h-4 text-green-700 dark:text-green-300"
+              className="h-4 w-4"
               fill="currentColor"
               viewBox="0 0 24 24"
               xmlns="http://www.w3.org/2000/svg"
@@ -143,39 +184,39 @@ const ToolCallTag: React.FC<ToolCallTagProps> = ({
             </svg>
           </div>
 
-          <div className="font-bold text-green-900 dark:text-green-100 leading-relaxed break-all">
-            {TOOL_CALL_NAME_MAPPING[name] ?? name}
+          <div className="break-all font-medium leading-relaxed text-foreground">
+            {summaryLabel}
           </div>
         </div>
         <div className="flex items-center gap-2">
           {needsConfirmation && (
-            <div className="bg-yellow-200 dark:bg-yellow-800 text-yellow-800 dark:text-yellow-200 text-xs px-2 py-0.5 rounded-full flex items-center gap-1">
+            <div className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">
               <AlertTriangle className="h-3 w-3" />
-              {t('chat.toolCall.requiresConfirmation', 'Needs Confirmation')}
+              {t('chat.toolCall.requiresConfirmation', '待确认')}
             </div>
           )}
           {!needsConfirmation && toolCall.result === '工具调用已取消' && (
-            <div className="bg-gray-200 dark:bg-gray-800 text-gray-800 dark:text-gray-200 text-xs px-2 py-0.5 rounded-full flex items-center gap-1">
+            <div className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
               <X className="h-3 w-3" />
-              {t('chat.toolCall.cancelled', 'Cancelled')}
+              {t('chat.toolCall.cancelled', '已取消')}
             </div>
           )}
           {parsedArgs && Object.keys(parsedArgs).length > 0 && (
-            <div className="bg-green-200 dark:bg-green-800 text-green-800 dark:text-green-200 text-xs px-2 py-0.5 rounded-full">
+            <div className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
               {Object.keys(parsedArgs).length}
             </div>
           )}
           {isExpanded ? (
-            <ChevronDown className="h-4 w-4 text-green-600 dark:text-green-400" />
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
           ) : (
-            <ChevronRight className="h-4 w-4 text-green-600 dark:text-green-400" />
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
           )}
         </div>
       </div>
 
       {/* Collapsible Content */}
       {isExpanded && (
-        <div className="border-t border-green-200 dark:border-green-950">
+        <div className="border-t border-border/70">
           <div className="p-3">
             {parsedArgs && Object.keys(parsedArgs).length > 0 ? (
               <div className="space-y-2">
@@ -190,13 +231,13 @@ const ToolCallTag: React.FC<ToolCallTagProps> = ({
                   Object.entries(parsedArgs).map(([key, value]) => (
                     <div
                       key={key}
-                      className="bg-white dark:bg-gray-950 border border-green-200 dark:border-green-950 rounded-md p-3 hover:shadow-sm transition-shadow"
+                      className="rounded-lg border border-border/70 bg-background p-3 transition-shadow hover:shadow-sm"
                     >
                       <div className="flex flex-col gap-1">
-                        <span className="font-bold text-green-900 dark:text-green-100">
+                        <span className="font-medium text-foreground">
                           {CONFIRMATION_DISPLAY_LABELS[key] ?? key}:
                         </span>
-                        <div className="text-gray-600 dark:text-gray-400 leading-relaxed break-all">
+                        <div className="break-all leading-relaxed text-muted-foreground">
                           {typeof value == 'object'
                             ? JSON.stringify(value, null, 2)
                             : String(value)}
@@ -206,8 +247,8 @@ const ToolCallTag: React.FC<ToolCallTagProps> = ({
                   ))}
               </div>
             ) : (
-              <div className="bg-white dark:bg-gray-950 border border-green-200 dark:border-green-950 rounded-md p-3 hover:shadow-sm transition-shadow">
-                <div className="text-gray-600 dark:text-gray-400 leading-relaxed break-all">
+              <div className="rounded-lg border border-border/70 bg-background p-3 transition-shadow hover:shadow-sm">
+                <div className="break-all leading-relaxed text-muted-foreground">
                   {inputs}
                 </div>
               </div>
@@ -216,31 +257,31 @@ const ToolCallTag: React.FC<ToolCallTagProps> = ({
 
             {/* 确认按钮 - 仅在需要确认时显示 */}
             {needsConfirmation && (
-              <div className="mt-4 pt-4 border-t border-green-200 dark:border-green-800">
+              <div className="mt-4 border-t border-border/70 pt-4">
                 <div className="flex gap-2">
                   {isPromptConfirmationTool && (
                     <Button
                       onClick={onRevise}
                       variant="outline"
-                      className="flex-1 border-blue-300 text-blue-700 hover:bg-blue-100"
+                      className="flex-1"
                     >
                       返回修改
                     </Button>
                   )}
                   <Button
                     onClick={onConfirm}
-                    className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                    className="flex-1"
                   >
                     <Check className="h-4 w-4 mr-2" />
-                    {t('chat.toolCall.confirm', 'Confirm')}
+                    {t('chat.toolCall.confirm', '确认')}
                   </Button>
                   <Button
                     onClick={onCancel}
                     variant="outline"
-                    className="flex-1 border-green-300 text-green-700 hover:bg-green-100"
+                    className="flex-1"
                   >
                     <X className="h-4 w-4 mr-2" />
-                    {t('chat.toolCall.cancel', 'Cancel')}
+                    {t('chat.toolCall.cancel', '取消')}
                   </Button>
                 </div>
               </div>
@@ -248,10 +289,10 @@ const ToolCallTag: React.FC<ToolCallTagProps> = ({
 
             {/* 取消状态显示 */}
             {!needsConfirmation && toolCall.result === '工具调用已取消' && (
-              <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-800">
-                <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
+              <div className="mt-4 border-t border-border/70 pt-4">
+                <div className="flex items-center gap-2 text-muted-foreground">
                   <X className="h-4 w-4" />
-                  <span className="text-sm">工具调用已取消</span>
+                  <span className="text-sm">已取消本次生成</span>
                 </div>
               </div>
             )}

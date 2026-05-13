@@ -55,7 +55,7 @@ def test_login_sets_cookie_and_unlocks_api(monkeypatch):
         "authenticated": True,
         "auth_required": True,
     }
-    assert "jaaz_session" in login_response.cookies
+    assert "ai_studio_session" in login_response.cookies
 
     response = client.get("/api/private")
     assert response.status_code == 200

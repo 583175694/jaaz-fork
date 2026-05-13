@@ -191,7 +191,9 @@ def _get_serving_url(filename: str) -> str:
 
 def format_video_success_message(filename: str, file_url: str | None = None) -> str:
     """Format success message for video generation"""
-    url = file_url or f"http://localhost:{DEFAULT_PORT}/api/file/{filename}"
+    url = file_url or f"/api/file/{filename}"
+    if url.startswith('/'):
+        url = f"http://localhost:{DEFAULT_PORT}{url}"
     return f"video generated successfully ![video_id: {filename}]({url})"
 
 

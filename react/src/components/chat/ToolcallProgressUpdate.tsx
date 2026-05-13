@@ -1,10 +1,30 @@
 import { eventBus } from '@/lib/event'
-
 import { TEvents } from '@/lib/event'
 import { useEffect } from 'react'
-
 import Spinner from '@/components/ui/Spinner'
 import { useState } from 'react'
+
+const normalizeProgressCopy = (progress: string) => {
+  const trimmed = String(progress || '').trim()
+  if (!trimmed) {
+    return ''
+  }
+
+  if (trimmed.includes('video')) {
+    return '正在生成视频'
+  }
+  if (trimmed.includes('storyboard')) {
+    return '正在生成分镜'
+  }
+  if (trimmed.includes('image')) {
+    return '正在生成图片'
+  }
+  if (trimmed.includes('prompt')) {
+    return '正在优化提示词'
+  }
+
+  return trimmed
+}
 
 export default function ToolcallProgressUpdate({
   sessionId,
@@ -29,9 +49,9 @@ export default function ToolcallProgressUpdate({
   }, [sessionId])
   if (!progress) return null
   return (
-    <div className="flex items-center gap-2 bg-purple-200 dark:bg-purple-500 rounded-full p-2">
+    <div className="flex items-center gap-2 rounded-full border border-border/70 bg-background/80 px-3 py-2 text-sm text-muted-foreground backdrop-blur-sm">
       <Spinner size={4} />
-      {progress}
+      <span>{normalizeProgressCopy(progress)}</span>
     </div>
   )
 }

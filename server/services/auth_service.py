@@ -9,7 +9,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 
 
-SESSION_COOKIE_NAME = "jaaz_session"
+SESSION_COOKIE_NAME = "ai_studio_session"
 SESSION_MAX_AGE_SECONDS = int(os.getenv("SESSION_MAX_AGE_SECONDS", "604800"))
 
 

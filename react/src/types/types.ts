@@ -6,6 +6,7 @@ export type ToolCallFunctionName =
   | 'generate_storyboard_from_main_image'
   | 'generate_multiview_variant'
   | 'generate_video_from_storyboard'
+  | 'generate_video_by_veo3_apipod'
   | 'prompt_user_multi_choice'
   | 'prompt_user_single_choice'
   | 'write_plan'

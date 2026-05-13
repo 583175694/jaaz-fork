@@ -41,7 +41,7 @@ const ToolCallContentV2: React.FC<{ content: string }> = ({ content }) => {
   }
 
   return (
-    <div className="p-2 bg-muted rounded-lg">
+    <div className="rounded-lg bg-muted/50 p-2">
       <Markdown>{content}</Markdown>
     </div>
   )

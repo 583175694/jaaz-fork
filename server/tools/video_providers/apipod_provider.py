@@ -37,8 +37,8 @@ def apipod_video_supports_multi_reference_images(model_name: str) -> bool:
 def format_apipod_multi_reference_images_not_supported_error(model_name: str) -> str:
     normalized = str(model_name or "").strip() or APIPOD_VIDEO_DEFAULT_MODEL_NAME
     return (
-        f"当前配置的视频模型 `{normalized}` 不支持多张参考图。"
-        "请切换到 `veo3-1-quality` 或 `veo3-1-fast`，以使用最多 2 张参考图生成 1 个视频。"
+        f"当前内置视频能力 `{normalized}` 不支持多张参考图。"
+        "请改为只选择 1 张图片后再生成视频。"
     )
 
 

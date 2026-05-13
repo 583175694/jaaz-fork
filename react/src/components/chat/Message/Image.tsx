@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button'
 import { useCanvas } from '@/contexts/canvas'
 import { useTranslation } from 'react-i18next'
 import { PhotoView } from 'react-photo-view'
+import { useMemo } from 'react'
 
 type MessageImageProps = {
   content: {
@@ -15,27 +16,36 @@ type MessageImageProps = {
 const MessageImage = ({ content }: MessageImageProps) => {
   const { excalidrawAPI } = useCanvas()
   const files = excalidrawAPI?.getFiles()
-  const filesArray = Object.keys(files || {}).map((key) => ({
-    id: key,
-    url: files![key].dataURL,
-  }))
+  const fileUrlIndex = useMemo(() => {
+    const index = new Map<string, string>()
+    Object.keys(files || {}).forEach((key) => {
+      const url = files?.[key]?.dataURL
+      if (!url) {
+        return
+      }
+      index.set(String(url), key)
+      index.set(`/api/file/${key}`, key)
+    })
+    return index
+  }, [files])
 
   const { t } = useTranslation()
 
   const handleImagePositioning = (id: string) => {
     excalidrawAPI?.scrollToContent(id, { animate: true })
   }
-  const id = filesArray.find((file) =>
-    content.image_url.url?.includes(file.url)
-  )?.id
+  const imageUrl = String(content.image_url.url || '')
+  const id =
+    fileUrlIndex.get(imageUrl) ||
+    Array.from(fileUrlIndex.entries()).find(([url]) => imageUrl.includes(url))?.[1]
 
   return (
     <div className="w-full max-w-[140px]">
-      <PhotoView src={content.image_url.url}>
+      <PhotoView src={imageUrl}>
         <div className="relative group cursor-pointer">
           <img
             className="w-full h-auto max-h-[140px] object-cover rounded-md border border-border hover:scale-105 transition-transform duration-300"
-            src={content.image_url.url}
+            src={imageUrl}
             alt="Image"
           />
 
