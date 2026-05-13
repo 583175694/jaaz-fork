@@ -58,6 +58,7 @@ export interface SessionToolCallEvent extends SessionBaseEvent {
   type: SessionEventType.ToolCall
   id: string
   name: ToolCallFunctionName
+  arguments?: string
 }
 export interface SessionToolCallArgumentsEvent extends SessionBaseEvent {
   type: SessionEventType.ToolCallArguments

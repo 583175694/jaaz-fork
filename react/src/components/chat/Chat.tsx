@@ -35,7 +35,6 @@ import { useTranslation } from 'react-i18next'
 import { PhotoProvider } from 'react-photo-view'
 import { toast } from 'sonner'
 import ChatTextarea from './ChatTextarea'
-import MessageRegular from './Message/Regular'
 import { ToolCallContent } from './Message/ToolCallContent'
 import ToolCallTag from './Message/ToolCallTag'
 import SessionSelector from './SessionSelector'
@@ -47,7 +46,7 @@ import { useCanvas } from '@/contexts/canvas'
 import 'react-photo-view/dist/react-photo-view.css'
 import { DEFAULT_SYSTEM_PROMPT } from '@/constants'
 import { ModelInfo, ToolInfo } from '@/api/model'
-import MixedContent, { MixedContentImages, MixedContentText } from './Message/MixedContent'
+import { MixedContentImages, MixedContentText } from './Message/MixedContent'
 
 
 type ChatInterfaceProps = {
@@ -99,6 +98,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const isAtBottomRef = useRef(false)
+  const hasAutoScrolledForSessionRef = useRef<string | null>(null)
 
   const scrollToBottom = useCallback(() => {
     if (!isAtBottomRef.current) {
@@ -324,7 +324,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
           upsertAssistantToolCallMessage(prev, {
             id: data.id,
             name: data.name,
-            argumentsText: '',
+            argumentsText: data.arguments || '',
           })
         })
       )
@@ -752,6 +752,31 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     }
   }, [sessionId, syncPendingToolConfirmations])
 
+  useEffect(() => {
+    hasAutoScrolledForSessionRef.current = null
+    isAtBottomRef.current = true
+  }, [sessionId])
+
+  useEffect(() => {
+    if (!sessionId || messages.length === 0 || !scrollRef.current) {
+      return
+    }
+
+    if (hasAutoScrolledForSessionRef.current === sessionId) {
+      return
+    }
+
+    const scrollEl = scrollRef.current
+    requestAnimationFrame(() => {
+      scrollEl.scrollTo({
+        top: scrollEl.scrollHeight,
+        behavior: 'auto',
+      })
+      isAtBottomRef.current = true
+      hasAutoScrolledForSessionRef.current = sessionId
+    })
+  }, [messages, sessionId])
+
   const onSelectSession = (sessionId: string) => {
     setSession(sessionList.find((s) => s.id === sessionId) || null)
     window.history.pushState(
@@ -835,17 +860,32 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
         <ScrollArea className='h-[calc(100vh-45px)]' viewportRef={scrollRef}>
           {messages.length > 0 ? (
-            <div className='flex flex-col flex-1 px-4 pb-50 pt-15'>
+            <div className='flex flex-col flex-1 px-4 pb-64 pt-15'>
               {/* Messages */}
               {messages.map((message, idx) => (
                 <div key={`${idx}`} className='flex flex-col gap-4 mb-2'>
                   {/* Regular message content */}
                   {typeof message.content == 'string' &&
                     (message.role !== 'tool' ? (
-                      <MessageRegular
-                        message={message}
-                        content={message.content}
-                      />
+                      <>
+                        <MixedContentImages
+                          contents={[
+                            {
+                              type: 'text',
+                              text: message.content,
+                            },
+                          ]}
+                        />
+                        <MixedContentText
+                          message={message}
+                          contents={[
+                            {
+                              type: 'text',
+                              text: message.content,
+                            },
+                          ]}
+                        />
+                      </>
                     ) : message.tool_call_id &&
                       mergedToolCallIds.current.includes(
                         message.tool_call_id

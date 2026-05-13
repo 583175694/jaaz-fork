@@ -30,6 +30,15 @@ const CONFIRMATION_TOOL_NAMES = new Set([
   'generate_video_from_storyboard',
 ])
 
+const TOOL_PROMPT_LABELS: Record<string, string> = {
+  generate_image: '生成提示词',
+  generate_image_by_gpt_image_2_edit_apipod: '生成提示词',
+  generate_storyboard_from_main_image: '分镜提示词',
+  generate_multiview_variant: '多视角提示词',
+  generate_video_from_storyboard: '视频提示词',
+  generate_video_by_veo3_apipod: '视频提示词',
+}
+
 const resolveToolCallSummary = (toolCall: ToolCall) => {
   const toolName = String(toolCall.function.name)
   const result = String(toolCall.result || '').trim()
@@ -152,10 +161,19 @@ const ToolCallTag: React.FC<ToolCallTagProps> = ({
     parsedArgs && typeof parsedArgs === 'object'
       ? typeof parsedArgs.prompt === 'string'
         ? parsedArgs.prompt
+        : typeof parsedArgs.final_prompt === 'string'
+          ? parsedArgs.final_prompt
+          : typeof parsedArgs.prompt_preview === 'string'
+            ? parsedArgs.prompt_preview
         : typeof parsedArgs.display_prompt_zh === 'string'
           ? parsedArgs.display_prompt_zh
           : null
       : null
+
+  const promptLabel = TOOL_PROMPT_LABELS[name]
+  const compactPromptPreview = resolvedPrompt
+    ? resolvedPrompt.replace(/\s+/g, ' ').trim()
+    : ''
 
   const summaryLabel = resolveToolCallSummary(toolCall)
 
@@ -184,8 +202,16 @@ const ToolCallTag: React.FC<ToolCallTagProps> = ({
             </svg>
           </div>
 
-          <div className="break-all font-medium leading-relaxed text-foreground">
-            {summaryLabel}
+          <div className="min-w-0">
+            <div className="break-all font-medium leading-relaxed text-foreground">
+              {summaryLabel}
+            </div>
+            {promptLabel && compactPromptPreview && (
+              <div className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                <span className="mr-1 font-medium">{promptLabel}:</span>
+                {compactPromptPreview}
+              </div>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">

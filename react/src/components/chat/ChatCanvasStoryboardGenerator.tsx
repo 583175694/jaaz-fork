@@ -84,6 +84,12 @@ const ChatCanvasStoryboardGenerator: React.FC<
               type: 'text',
               text: data.finalPrompt,
             },
+            {
+              type: 'image_url',
+              image_url: {
+                url: resolvedImage.imageUrl,
+              },
+            },
           ],
         }
 

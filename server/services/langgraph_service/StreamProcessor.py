@@ -190,7 +190,7 @@ class StreamProcessor:
                     'type': 'tool_call',
                     'id': tool_call_id,
                     'name': tool_name,
-                    'arguments': '{}'
+                    'arguments': json.dumps(tool_call.get('args') or {}, ensure_ascii=False)
                 })
 
     async def _handle_tool_call_chunks(self, tool_call_chunks: List[Any]) -> None:
