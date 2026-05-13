@@ -20,10 +20,9 @@ Settings Router - 设置路由模块
 """
 
 import os
-import shutil
-from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 from services.settings_service import settings_service
-from services.knowledge_service import list_user_enabled_knowledge
 
 # 创建设置相关的路由器，所有端点都以 /api/settings 为前缀
 router = APIRouter(prefix="/api/settings")
@@ -46,44 +45,21 @@ async def settings_exists():
 
 @router.get("")
 async def get_settings():
-    """
-    获取所有设置配置
-
-    Returns:
-        dict: 完整的设置配置字典，敏感信息已被掩码处理
-
-    Description:
-        返回所有应用设置，包括代理配置、系统提示词等。
-        敏感信息（如密码）会被替换为 '*' 字符以保护隐私。
-        设置会与默认配置合并，确保所有必需的键都存在。
-    """
-    return settings_service.get_settings()
+    return {
+        "proxy": settings_service.get_proxy_config(),
+    }
 
 
 @router.post("")
 async def update_settings(request: Request):
-    """
-    更新设置配置
-
-    Args:
-        request (Request): HTTP 请求对象，包含要更新的设置数据
-
-    Returns:
-        dict: 操作结果，包含 status 和 message 字段
-
-    Description:
-        接收 JSON 格式的设置数据并更新到配置文件。
-        支持部分更新，新数据会与现有设置合并而不是完全替换。
-
-    Example:
-        POST /api/settings
-        {
-            "proxy": "http://proxy.com:8080"  // 或 "no_proxy" 或 "system"
-        }
-    """
-    data = await request.json()
-    result = await settings_service.update_settings(data)
-    return result
+    _ = await request.json()
+    return JSONResponse(
+        status_code=403,
+        content={
+            "status": "error",
+            "message": "Production runtime only allows proxy updates through /api/settings/proxy.",
+        },
+    )
 
 
 @router.get("/proxy/status")
@@ -222,25 +198,11 @@ async def update_proxy_settings(request: Request):
 
 @router.get("/knowledge/enabled")
 async def get_enabled_knowledge():
-    """
-    获取启用的知识库列表
-
-    Returns:
-        dict: 包含启用知识库列表的响应
-    """
-    try:
-        knowledge_list = list_user_enabled_knowledge()
-        return {
-            "success": True,
-            "data": knowledge_list,
-            "count": len(knowledge_list)
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "data": []
-        }
+    return {
+        "success": True,
+        "data": [],
+        "count": 0,
+    }
 
 
 @router.get("/my_assets_dir_path")

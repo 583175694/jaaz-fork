@@ -3,8 +3,8 @@
   "placeholder": "在这里输入你的消息...",
   "textarea": {
     "placeholder": "输入您的设计需求",
-    "selectModel": "文本运行时当前不可用，请检查应用设置后重试。",
-    "selectTool": "图片或视频生成当前不可用，请检查应用设置后重试。",
+    "selectModel": "文本运行时当前不可用，请联系管理员后重试。",
+    "selectTool": "图片或视频生成当前不可用，请联系管理员后重试。",
     "enterPrompt": "请输入提示内容",
     "quantity": "生成数量"
   },

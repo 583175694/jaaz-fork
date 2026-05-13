@@ -1,7 +1,6 @@
 import UpdateNotificationDialog from '@/components/common/UpdateNotificationDialog'
 import { ThemeProvider } from '@/components/theme/ThemeProvider'
 import { ConfigsProvider } from '@/contexts/configs'
-import { AuthProvider } from '@/contexts/AuthContext'
 import { useTheme } from '@/hooks/use-theme'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
@@ -69,16 +68,14 @@ function App() {
         client={queryClient}
         persistOptions={{ persister }}
       >
-        <AuthProvider>
-          <ConfigsProvider>
-            <div className="app-container">
-              <RouterProvider router={router} />
+        <ConfigsProvider>
+          <div className="app-container">
+            <RouterProvider router={router} />
 
-              {/* Update Notification Dialog */}
-              <UpdateNotificationDialog />
-            </div>
-          </ConfigsProvider>
-        </AuthProvider>
+            {/* Update Notification Dialog */}
+            <UpdateNotificationDialog />
+          </div>
+        </ConfigsProvider>
       </PersistQueryClientProvider>
       <Toaster position="bottom-center" richColors />
     </ThemeProvider>

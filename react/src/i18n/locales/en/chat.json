@@ -3,8 +3,8 @@
   "placeholder": "Type your message here...",
   "textarea": {
     "placeholder": "Enter your design requirements",
-    "selectModel": "Text runtime is unavailable. Check application settings and retry.",
-    "selectTool": "Image or video generation is currently unavailable. Check application settings and retry.",
+    "selectModel": "Text runtime is currently unavailable. Please contact the administrator and retry.",
+    "selectTool": "Image or video generation is currently unavailable. Please contact the administrator and retry.",
     "enterPrompt": "Please enter a prompt",
     "quantity": "Image Quantity"
   },

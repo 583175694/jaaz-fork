@@ -142,9 +142,6 @@ export {
   useSidebar,
 } from './components/ui/sidebar'
 
-// Auth Components
-export { UserMenu } from './components/auth/UserMenu'
-
 // Common Components
 export { default as Blur } from './components/common/Blur'
 export { default as ErrorBoundary } from './components/common/ErrorBoundary'
@@ -165,7 +162,6 @@ export type {
 } from './types/types'
 
 // Contexts
-export { AuthProvider, useAuth } from './contexts/AuthContext'
 export { ConfigsProvider, useConfigs } from './contexts/configs'
 export { CanvasProvider, useCanvas } from './contexts/canvas'
 
