@@ -78,13 +78,32 @@ if os.path.exists(static_site):
     app.mount("/assets", NoCacheStaticFiles(directory=static_site), name="assets")
 
 
-@app.get("/")
-async def serve_react_app():
-    response = FileResponse(os.path.join(react_build_dir, "index.html"))
+def no_cache_file_response(file_path: str) -> FileResponse:
+    response = FileResponse(file_path)
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
     return response
+
+
+@app.get("/app-logo.svg")
+async def serve_app_logo():
+    return no_cache_file_response(os.path.join(react_build_dir, "app-logo.svg"))
+
+
+@app.get("/jaaz.png")
+async def serve_jaaz_logo():
+    return no_cache_file_response(os.path.join(react_build_dir, "jaaz.png"))
+
+
+@app.get("/unicorn.png")
+async def serve_unicorn_logo():
+    return no_cache_file_response(os.path.join(react_build_dir, "unicorn.png"))
+
+
+@app.get("/")
+async def serve_react_app():
+    return no_cache_file_response(os.path.join(react_build_dir, "index.html"))
 
 print('Creating socketio app')
 socket_app = socketio.ASGIApp(sio, other_asgi_app=app, socketio_path='/socket.io')
