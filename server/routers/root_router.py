@@ -7,6 +7,12 @@ from models.config_model import ModelInfo
 
 router = APIRouter(prefix="/api")
 
+
+@router.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
 # List all LLM models
 @router.get("/list_models")
 async def get_models() -> list[ModelInfo]:

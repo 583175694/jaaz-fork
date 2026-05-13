@@ -17,6 +17,15 @@ def is_auth_required() -> bool:
     return bool(os.getenv("APP_PASSWORD", "").strip())
 
 
+def use_secure_cookie() -> bool:
+    return os.getenv("SESSION_COOKIE_SECURE", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 def _session_secret() -> str:
     configured = os.getenv("SESSION_SECRET", "").strip()
     if configured:
@@ -76,6 +85,7 @@ def set_session_cookie(response: Response) -> None:
         max_age=SESSION_MAX_AGE_SECONDS,
         httponly=True,
         samesite="lax",
+        secure=use_secure_cookie(),
     )
 
 
@@ -84,6 +94,8 @@ def clear_session_cookie(response: Response) -> None:
 
 
 def _is_public_path(path: str) -> bool:
+    if path == "/api/health":
+        return True
     if not path.startswith("/api/"):
         return True
     if path.startswith("/api/auth/"):

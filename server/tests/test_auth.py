@@ -27,6 +27,10 @@ def _build_app(monkeypatch):
     async def private_api():
         return {"ok": True}
 
+    @app.get("/api/health")
+    async def health():
+        return {"status": "ok"}
+
     return app
 
 
@@ -82,3 +86,24 @@ def test_logout_clears_session(monkeypatch):
         "auth_required": True,
     }
     assert protected_response.status_code == 401
+
+
+def test_health_endpoint_is_public_when_password_is_configured(monkeypatch):
+    app = _build_app(monkeypatch)
+    client = TestClient(app)
+
+    response = client.get("/api/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_secure_cookie_can_be_enabled(monkeypatch):
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "true")
+    app = _build_app(monkeypatch)
+    client = TestClient(app)
+
+    response = client.post("/api/auth/login", json={"password": "secret-pass"})
+
+    assert response.status_code == 200
+    assert "secure" in response.headers["set-cookie"].lower()

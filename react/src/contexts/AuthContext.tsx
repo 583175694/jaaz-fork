@@ -24,6 +24,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true)
     try {
       setAuthStatus(await getAuthStatus())
+    } catch (error) {
+      console.error('Failed to refresh auth status:', error)
+      setAuthStatus({
+        authenticated: false,
+        auth_required: true,
+        status: 'logged_out',
+        is_logged_in: false,
+      })
     } finally {
       setIsLoading(false)
     }

@@ -40,15 +40,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
         setError(undefined)
 
         const devSocketUrl = (() => {
-          if (process.env.NODE_ENV !== 'development') {
-            return window.location.origin
-          }
-
-          const hostname =
-            window.location.hostname === 'localhost'
-              ? '127.0.0.1'
-              : window.location.hostname
-          return `${window.location.protocol}//${hostname}:57988`
+          return window.location.origin
         })()
 
         // Create socket manager instance if not exists
