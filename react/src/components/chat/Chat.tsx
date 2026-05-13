@@ -45,7 +45,7 @@ import ToolcallProgressUpdate from './ToolcallProgressUpdate'
 import { useConfigs } from '@/contexts/configs'
 import { useCanvas } from '@/contexts/canvas'
 import 'react-photo-view/dist/react-photo-view.css'
-import { APP_NAME, DEFAULT_SYSTEM_PROMPT } from '@/constants'
+import { DEFAULT_SYSTEM_PROMPT } from '@/constants'
 import { ModelInfo, ToolInfo } from '@/api/model'
 import MixedContent, { MixedContentImages, MixedContentText } from './Message/MixedContent'
 
@@ -922,7 +922,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 transition={{ duration: 0.5 }}
                 className='text-muted-foreground text-3xl'
               >
-                {`Hello, ${APP_NAME}!`}
+                {t('home:title')}
               </motion.span>
               <motion.span
                 initial={{ opacity: 0, y: 10 }}
@@ -930,7 +930,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 transition={{ duration: 0.6 }}
                 className='text-muted-foreground text-2xl'
               >
-                {'How can I help you today?'}
+                {t('home:subtitle')}
               </motion.span>
             </motion.div>
           )}

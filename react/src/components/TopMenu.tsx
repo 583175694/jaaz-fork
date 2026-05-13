@@ -6,7 +6,6 @@ import { useNavigate } from '@tanstack/react-router'
 import ThemeButton from '@/components/theme/ThemeButton'
 import { APP_NAME, LOGO_URL } from '@/constants'
 import LanguageSwitcher from './common/LanguageSwitcher'
-import { UserMenu } from './auth/UserMenu'
 
 export default function TopMenu({
   middle,
@@ -48,7 +47,6 @@ export default function TopMenu({
         {right}
         <LanguageSwitcher />
         <ThemeButton />
-        <UserMenu />
       </div>
     </motion.div>
   )

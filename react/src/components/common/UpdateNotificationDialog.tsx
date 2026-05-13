@@ -55,7 +55,7 @@ const UpdateNotificationDialog = () => {
 
   // Add global function for testing in browser console
   useEffect(() => {
-    if (process.env.NODE_ENV === 'development') {
+    if (import.meta.env.DEV) {
       // @ts-expect-error - Adding test function to window for development
       window.testUpdateDialog = handleTestUpdateDialog
       console.log(

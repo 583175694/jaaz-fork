@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 from services.config_service import config_service
 # from tools.video_models_dynamic import register_video_models  # Disabled video models
 from services.tool_service import tool_service
@@ -18,9 +19,11 @@ async def get_config():
 
 @router.post("")
 async def update_config(request: Request):
-    data = await request.json()
-    res = await config_service.update_config(data)
-
-    # 每次更新配置后，重新初始化工具
-    await tool_service.initialize()
-    return res
+    _ = await request.json()
+    return JSONResponse(
+        status_code=403,
+        content={
+            "status": "error",
+            "message": "Production runtime uses built-in model configuration and does not allow config updates.",
+        },
+    )

@@ -28,7 +28,7 @@ const SessionSelector: React.FC<SessionSelectorProps> = ({
   return (
     <div className="flex items-center gap-2 w-full">
       <Select
-        value={session?.id}
+        value={session?.id || ''}
         onValueChange={(value) => {
           onSelectSession(value)
         }}

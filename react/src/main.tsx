@@ -5,6 +5,7 @@ import App from './App'
 import { PostHogProvider } from 'posthog-js/react'
 import '@/assets/style/index.css'
 
+const posthogKey = String(import.meta.env.VITE_PUBLIC_POSTHOG_KEY || '').trim()
 const options = {
   api_host: import.meta.env.VITE_PUBLIC_POSTHOG_HOST,
 }
@@ -12,13 +13,21 @@ const options = {
 const rootElement = document.getElementById('root')!
 if (!rootElement.innerHTML) {
   const root = ReactDOM.createRoot(rootElement)
-  root.render(
+  const app = (
     <StrictMode>
-      <PostHogProvider apiKey={import.meta.env.VITE_PUBLIC_POSTHOG_KEY} options={options}>
-        <SocketProvider>
-          <App />
-        </SocketProvider>
-      </PostHogProvider>
+      <SocketProvider>
+        <App />
+      </SocketProvider>
     </StrictMode>
+  )
+
+  root.render(
+    posthogKey ? (
+      <PostHogProvider apiKey={posthogKey} options={options}>
+        {app}
+      </PostHogProvider>
+    ) : (
+      app
+    )
   )
 }
