@@ -46,8 +46,8 @@ const CanvasVideoGenerator = ({ selectedImages }: CanvasVideoGeneratorProps) => 
   const { textModel } = useConfigs()
   const [open, setOpen] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const [userPrompt, setUserPrompt] = useState('')
-  const [finalPrompt, setFinalPrompt] = useState('')
+  const [promptDraft, setPromptDraft] = useState('')
+  const [lastRawPrompt, setLastRawPrompt] = useState('')
   const [isBuildingPrompt, setIsBuildingPrompt] = useState(false)
   const [duration, setDuration] = useState('6')
   const [aspectRatio, setAspectRatio] = useState('16:9')
@@ -66,15 +66,11 @@ const CanvasVideoGenerator = ({ selectedImages }: CanvasVideoGeneratorProps) => 
     setOrderedImages(normalizedSelectedImages)
   }, [normalizedSelectedImages, open])
 
-  const invalidateFinalPrompt = () => {
-    setFinalPrompt('')
-  }
-
   const handleOpenChange = (nextOpen: boolean) => {
     setOpen(nextOpen)
     if (!nextOpen) {
-      setUserPrompt('')
-      setFinalPrompt('')
+      setPromptDraft('')
+      setLastRawPrompt('')
       setShowAdvanced(false)
       setOrderedImages([])
     }
@@ -85,7 +81,6 @@ const CanvasVideoGenerator = ({ selectedImages }: CanvasVideoGeneratorProps) => 
       return
     }
     setOrderedImages([orderedImages[1], orderedImages[0]])
-    invalidateFinalPrompt()
   }
 
   const handleBuildPrompt = async () => {
@@ -93,8 +88,8 @@ const CanvasVideoGenerator = ({ selectedImages }: CanvasVideoGeneratorProps) => 
       toast.error('当前画布信息缺失，暂时无法生成提示词')
       return
     }
-    const trimmedUserPrompt = userPrompt.trim()
-    if (!trimmedUserPrompt) {
+    const trimmedPromptDraft = promptDraft.trim()
+    if (!trimmedPromptDraft) {
       toast.warning('请先输入视频需求')
       return
     }
@@ -134,7 +129,7 @@ const CanvasVideoGenerator = ({ selectedImages }: CanvasVideoGeneratorProps) => 
         canvasId,
         textModel,
         fileIds: imagesForPrompt.map((image) => image.fileId),
-        prompt: trimmedUserPrompt,
+        prompt: trimmedPromptDraft,
         duration: Number(duration),
         aspectRatio,
         resolution,
@@ -146,7 +141,8 @@ const CanvasVideoGenerator = ({ selectedImages }: CanvasVideoGeneratorProps) => 
       if (!nextPrompt) {
         throw new Error('模型没有返回可用的视频提示词')
       }
-      setFinalPrompt(nextPrompt)
+      setLastRawPrompt(trimmedPromptDraft)
+      setPromptDraft(nextPrompt)
     } catch (error) {
       console.error('Failed to build video prompt:', error)
       toast.error('生成提示词失败', {
@@ -158,21 +154,16 @@ const CanvasVideoGenerator = ({ selectedImages }: CanvasVideoGeneratorProps) => 
   }
 
   const handleGenerateVideo = () => {
-    const trimmedUserPrompt = userPrompt.trim()
-    const trimmedFinalPrompt = finalPrompt.trim()
-    if (!trimmedUserPrompt) {
+    const trimmedPromptDraft = promptDraft.trim()
+    if (!trimmedPromptDraft) {
       toast.warning('请先输入视频需求')
-      return
-    }
-    if (!trimmedFinalPrompt) {
-      toast.warning('请先优化并确认最终提示词')
       return
     }
 
     eventBus.emit('Canvas::GenerateVideo', {
       selectedImages: orderedImages.length > 0 ? orderedImages : normalizedSelectedImages,
-      userPrompt: trimmedUserPrompt,
-      finalPrompt: trimmedFinalPrompt,
+      userPrompt: lastRawPrompt || trimmedPromptDraft,
+      finalPrompt: trimmedPromptDraft,
       duration: Number(duration),
       aspectRatio,
       resolution,
@@ -180,8 +171,8 @@ const CanvasVideoGenerator = ({ selectedImages }: CanvasVideoGeneratorProps) => 
     })
 
     setOpen(false)
-    setUserPrompt('')
-    setFinalPrompt('')
+    setPromptDraft('')
+    setLastRawPrompt('')
     setShowAdvanced(false)
     setOrderedImages([])
   }
@@ -198,7 +189,7 @@ const CanvasVideoGenerator = ({ selectedImages }: CanvasVideoGeneratorProps) => 
           <DialogHeader className='shrink-0 border-b px-6 py-5'>
             <DialogTitle>生成视频</DialogTitle>
             <DialogDescription>
-              先填写视频需求，再由系统优化为可生成的视频提示词。
+              先输入视频需求。点击“优化提示词”后会直接覆盖到同一个输入框里，你可以继续修改，再次优化。
             </DialogDescription>
           </DialogHeader>
 
@@ -261,29 +252,15 @@ const CanvasVideoGenerator = ({ selectedImages }: CanvasVideoGeneratorProps) => 
               <div className='rounded-xl border bg-muted/20 p-4'>
                 <div className='mb-2 flex items-center gap-2 text-sm font-medium text-foreground'>
                   <Sparkles className='h-4 w-4' />
-                  视频需求
+                  视频需求 / 提示词
                 </div>
                 <Textarea
-                  value={userPrompt}
-                  onChange={(event) => {
-                    setUserPrompt(event.target.value)
-                    invalidateFinalPrompt()
-                  }}
-                  placeholder='先描述你想生成的视频内容、镜头运动、风格、节奏和重点。'
-                  className='min-h-32'
-                />
-              </div>
-
-              <div className='rounded-xl border bg-muted/20 p-4'>
-                <div className='mb-2 flex items-center gap-2 text-sm font-medium text-foreground'>
-                  <Sparkles className='h-4 w-4' />
-                  专业优化后的提示词
-                </div>
-                <Textarea
-                  value={finalPrompt}
-                  onChange={(event) => setFinalPrompt(event.target.value)}
+                  value={promptDraft}
+                  onChange={(event) => setPromptDraft(event.target.value)}
                   placeholder={
-                    isBuildingPrompt ? '正在优化提示词...' : '点击“优化提示词”后会在这里生成专业提示词'
+                    isBuildingPrompt
+                      ? '正在优化提示词...'
+                      : '先描述你想生成的视频内容、镜头运动、风格、节奏和重点。优化后会直接覆盖在这里，你也可以继续手动修改。'
                   }
                   className='min-h-72'
                 />
@@ -318,7 +295,6 @@ const CanvasVideoGenerator = ({ selectedImages }: CanvasVideoGeneratorProps) => 
                     value={duration}
                     onValueChange={(value) => {
                       setDuration(value)
-                      invalidateFinalPrompt()
                     }}
                   >
                     <SelectTrigger className='w-full'>
@@ -339,7 +315,6 @@ const CanvasVideoGenerator = ({ selectedImages }: CanvasVideoGeneratorProps) => 
                     value={aspectRatio}
                     onValueChange={(value) => {
                       setAspectRatio(value)
-                      invalidateFinalPrompt()
                     }}
                   >
                     <SelectTrigger className='w-full'>
@@ -360,7 +335,6 @@ const CanvasVideoGenerator = ({ selectedImages }: CanvasVideoGeneratorProps) => 
                     value={resolution}
                     onValueChange={(value) => {
                       setResolution(value)
-                      invalidateFinalPrompt()
                     }}
                   >
                     <SelectTrigger className='w-full'>
@@ -381,13 +355,10 @@ const CanvasVideoGenerator = ({ selectedImages }: CanvasVideoGeneratorProps) => 
             <Button variant='outline' onClick={() => setOpen(false)}>
               取消
             </Button>
-            <Button onClick={handleBuildPrompt} disabled={isBuildingPrompt}>
+            <Button onClick={handleBuildPrompt} disabled={isBuildingPrompt || !promptDraft.trim()}>
               {isBuildingPrompt ? '正在优化提示词...' : '优化提示词'}
             </Button>
-            <Button
-              onClick={handleGenerateVideo}
-              disabled={isBuildingPrompt || !userPrompt.trim() || !finalPrompt.trim()}
-            >
+            <Button onClick={handleGenerateVideo} disabled={isBuildingPrompt || !promptDraft.trim()}>
               <Check className='mr-2 h-4 w-4' />
               开始生成视频
             </Button>

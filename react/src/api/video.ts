@@ -51,6 +51,7 @@ export const sendDirectVideoGenerate = async (payload: {
   startFrameFileId?: string
   endFrameFileId?: string
   skipPromptConfirmation?: boolean
+  skipPromptCompilation?: boolean
 }) => {
   const response = await fetch('/api/direct_video', {
     method: 'POST',
@@ -71,6 +72,7 @@ export const sendDirectVideoGenerate = async (payload: {
       start_frame_file_id: payload.startFrameFileId,
       end_frame_file_id: payload.endFrameFileId,
       skip_prompt_confirmation: payload.skipPromptConfirmation,
+      skip_prompt_compilation: payload.skipPromptCompilation,
     }),
   })
   if (!response.ok) {

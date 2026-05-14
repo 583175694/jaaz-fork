@@ -99,7 +99,7 @@ const ChatCanvasVideoGenerator: React.FC<ChatCanvasVideoGeneratorProps> = ({
           content: [
             {
               type: 'text',
-              text: data.userPrompt,
+              text: data.finalPrompt,
             },
             ...resolvedImages.map((image) => ({
               type: 'image_url' as const,
@@ -128,6 +128,7 @@ const ChatCanvasVideoGenerator: React.FC<ChatCanvasVideoGeneratorProps> = ({
           startFrameFileId: startFrame.fileId,
           endFrameFileId: endFrame.fileId,
           skipPromptConfirmation: true,
+          skipPromptCompilation: true,
         })
 
         const startedAt = Date.now()
