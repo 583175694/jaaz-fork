@@ -916,6 +916,23 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
       fileCount: Object.keys(normalizedData?.files || {}).length,
     })
 
+    const incomingElements = normalizedData?.elements || []
+    const currentElements = excalidrawAPI.getSceneElements()
+    const currentImageCount = currentElements.filter(
+      (element) => !element.isDeleted && element.type === 'image'
+    ).length
+    const incomingImageCount = incomingElements.filter(
+      (element) => !element.isDeleted && element.type === 'image'
+    ).length
+    if (incomingImageCount < currentImageCount) {
+      console.log('🖼️ Ignoring stale remote canvas scene with fewer images', {
+        canvasId,
+        currentImageCount,
+        incomingImageCount,
+      })
+      return
+    }
+
     const normalizedFiles = Object.values(
       (normalizedData?.files || {}) as Record<string, BinaryFileData>
     )
@@ -926,7 +943,7 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
     suppressNextSaveRef.current = true
     excalidrawAPI.updateScene({
       elements: [
-        ...(normalizedData?.elements || []),
+        ...incomingElements,
         ...buildStoryboardDecorations(normalizedData, mainImageFileId),
       ],
     })
@@ -982,8 +999,12 @@ const CanvasExcali: React.FC<CanvasExcaliProps> = ({
         status: 'saved' as const,
       }
 
+      const filteredElements = (currentElements || []).filter(
+        (element) => element.id !== nextImageElement.id
+      )
+
       excalidrawAPI.updateScene({
-        elements: [...(currentElements || []), nextImageElement],
+        elements: [...filteredElements, nextImageElement],
       })
 
       localStorage.setItem(

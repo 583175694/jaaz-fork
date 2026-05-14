@@ -10,7 +10,7 @@ import { CanvasProvider } from '@/contexts/canvas'
 import { Session } from '@/types/types'
 import { createFileRoute, useParams, useSearch } from '@tanstack/react-router'
 import { Loader2 } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 export const Route = createFileRoute('/canvas/$id')({
   component: Canvas,
@@ -23,6 +23,7 @@ function Canvas() {
   const [error, setError] = useState<Error | null>(null)
   const [canvasName, setCanvasName] = useState('')
   const [sessionList, setSessionList] = useState<Session[]>([])
+  const latestFetchRequestIdRef = useRef(0)
   // initialVideos removed - using native Excalidraw embeddable elements instead
   const search = useSearch({ from: '/canvas/$id' }) as {
     sessionId: string
@@ -31,12 +32,22 @@ function Canvas() {
   const fetchCanvas = useCallback(
     async (options?: { silent?: boolean }) => {
       const silent = !!options?.silent
+      const requestId = latestFetchRequestIdRef.current + 1
+      latestFetchRequestIdRef.current = requestId
       try {
         if (!silent) {
           setIsLoading(true)
         }
         setError(null)
         const data = await getCanvas(id)
+        if (requestId !== latestFetchRequestIdRef.current) {
+          console.log('🖼️ Ignoring stale canvas response', {
+            canvasId: id,
+            requestId,
+            latestRequestId: latestFetchRequestIdRef.current,
+          })
+          return
+        }
         setCanvas(data)
         setCanvasName(data.name)
         setSessionList(data.sessions)
