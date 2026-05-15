@@ -1,11 +1,12 @@
 import { createCanvas, listCanvases } from '@/api/canvas'
 import CanvasCard from '@/components/home/CanvasCard'
-import NewCanvasCard from '@/components/home/NewCanvasCard'
+import { Button } from '@/components/ui/button'
 import { useConfigs } from '@/contexts/configs'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useLocation } from '@tanstack/react-router'
 import { AnimatePresence, motion } from 'motion/react'
 import { nanoid } from 'nanoid'
+import { Plus } from 'lucide-react'
 import { memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -67,30 +68,33 @@ const CanvasList: React.FC = () => {
   return (
     <div className="flex flex-col px-10 mt-10 gap-4 select-none max-w-[1200px] mx-auto">
       {isHomePage && (
-        <motion.span
-          className="text-2xl font-bold"
+        <motion.div
+          className="flex items-center justify-between gap-4"
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          {t('home:allProjects')}
-        </motion.span>
+          <span className="text-2xl font-bold">{t('home:allProjects')}</span>
+          <Button
+            type="button"
+            variant="outline"
+            className="rounded-full border-primary/25 px-5 text-primary hover:bg-primary/5 hover:text-primary"
+            onClick={() => {
+              void handleCreateBlankCanvas()
+            }}
+          >
+            <Plus className="w-4 h-4" />
+            {t('home:createBlankCanvas')}
+          </Button>
+        </motion.div>
       )}
 
       <AnimatePresence>
         <div className="grid grid-cols-4 gap-4 w-full pb-10">
-          {isHomePage && (
-            <NewCanvasCard
-              index={0}
-              onClick={() => {
-                void handleCreateBlankCanvas()
-              }}
-            />
-          )}
           {canvases?.map((canvas, index) => (
             <CanvasCard
               key={canvas.id}
-              index={index + (isHomePage ? 1 : 0)}
+              index={index}
               canvas={canvas}
               handleCanvasClick={handleCanvasClick}
               handleDeleteCanvas={() => refetch()}
