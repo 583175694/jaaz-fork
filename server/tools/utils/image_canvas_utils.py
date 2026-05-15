@@ -61,6 +61,100 @@ class CanvasLockManager:
 canvas_lock_manager = CanvasLockManager()
 
 
+def _collect_media_elements(canvas_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    elements = canvas_data.get("elements", []) if isinstance(canvas_data, dict) else []
+    if not isinstance(elements, list):
+        return []
+
+    return [
+        element
+        for element in elements
+        if isinstance(element, dict)
+        and not element.get("isDeleted")
+        and element.get("type") in {"image", "embeddable", "video"}
+    ]
+
+
+def _rectangles_overlap(
+    left: float,
+    top: float,
+    width: float,
+    height: float,
+    other_left: float,
+    other_top: float,
+    other_width: float,
+    other_height: float,
+    spacing: float,
+) -> bool:
+    return not (
+        left + width + spacing <= other_left
+        or other_left + other_width + spacing <= left
+        or top + height + spacing <= other_top
+        or other_top + other_height + spacing <= top
+    )
+
+
+async def _resolve_non_overlapping_position(
+    canvas_data: Dict[str, Any],
+    preferred_position: Dict[str, float],
+    image_width: float,
+    image_height: float,
+    spacing: float = 32.0,
+) -> tuple[float, float]:
+    media_elements = _collect_media_elements(canvas_data)
+    if not media_elements:
+        return (
+            float(preferred_position.get("x", 0) or 0),
+            float(preferred_position.get("y", 0) or 0),
+        )
+
+    candidate_x = float(preferred_position.get("x", 0) or 0)
+    candidate_y = float(preferred_position.get("y", 0) or 0)
+    min_x = min(float(element.get("x", 0) or 0) for element in media_elements)
+    max_x = max(
+        float(element.get("x", 0) or 0) + float(element.get("width", 0) or 0)
+        for element in media_elements
+    )
+    wrap_threshold = max_x + spacing + image_width
+
+    for _ in range(256):
+        collision: Optional[Dict[str, Any]] = None
+        for element in media_elements:
+            element_x = float(element.get("x", 0) or 0)
+            element_y = float(element.get("y", 0) or 0)
+            element_width = float(element.get("width", 0) or 0)
+            element_height = float(element.get("height", 0) or 0)
+            if _rectangles_overlap(
+                candidate_x,
+                candidate_y,
+                image_width,
+                image_height,
+                element_x,
+                element_y,
+                element_width,
+                element_height,
+                spacing,
+            ):
+                collision = element
+                break
+
+        if collision is None:
+            return candidate_x, candidate_y
+
+        collision_x = float(collision.get("x", 0) or 0)
+        collision_y = float(collision.get("y", 0) or 0)
+        collision_width = float(collision.get("width", 0) or 0)
+        collision_height = float(collision.get("height", 0) or 0)
+
+        candidate_x = collision_x + collision_width + spacing
+        if candidate_x + image_width > wrap_threshold:
+            candidate_x = min_x
+            candidate_y = max(candidate_y, collision_y + collision_height + spacing)
+
+    fallback_x, fallback_y = await find_next_best_element_position(canvas_data)
+    return float(fallback_x), float(fallback_y)
+
+
 
 async def generate_new_image_element(
     canvas_id: str,
@@ -77,8 +171,12 @@ async def generate_new_image_element(
         canvas_data = canvas.get("data", {})
 
     if preferred_position:
-        new_x = float(preferred_position.get("x", 0) or 0)
-        new_y = float(preferred_position.get("y", 0) or 0)
+        new_x, new_y = await _resolve_non_overlapping_position(
+            canvas_data,
+            preferred_position,
+            float(image_data.get("width", 0) or 0),
+            float(image_data.get("height", 0) or 0),
+        )
     else:
         new_x, new_y = await find_next_best_element_position(canvas_data)
 

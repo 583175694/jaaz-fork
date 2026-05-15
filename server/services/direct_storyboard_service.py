@@ -1,9 +1,18 @@
 import asyncio
 import json
+import traceback
 from typing import Any, Dict, List, Optional, TypedDict
 
 from nanoid import generate
 
+from models.config_model import ModelInfo
+from services.ad_prompt_compiler_service import (
+    build_fallback_brief,
+    compile_creative_brief,
+    compile_image_prompt,
+    evaluate_image_prompt,
+    rewrite_image_prompt,
+)
 from services.db_service import db_service
 from services.prompt_confirmation_service import request_prompt_bundle_confirmation
 from services.production_workflow_service import (
@@ -14,6 +23,7 @@ from services.production_workflow_service import (
     upsert_continuity_asset,
     upsert_storyboard_plan,
 )
+from services.runtime_defaults import get_default_text_model
 from services.stream_service import add_stream_task, get_stream_task, remove_stream_task
 from services.websocket_service import send_to_websocket
 from services.tool_service import tool_service
@@ -119,6 +129,38 @@ def _normalize_main_image_file_id(data: Dict[str, Any]) -> str:
     return str(data.get("main_image_file_id", "") or "").strip()
 
 
+def _build_generation_failure_response(action_label: str, exc: Exception) -> Dict[str, Any]:
+    raw_message = str(exc).strip() or "未知错误"
+    if "APIPod image request failed status=400" in raw_message:
+        detail = (
+            "图像服务拒绝了本次请求（APIPod 返回 400）。"
+            "通常是模型参数兼容性、账号额度或服务瞬时异常导致。"
+        )
+    elif "APIPod image task failed" in raw_message:
+        detail = "图像服务任务执行失败，结果未能成功返回。"
+    elif "timed out" in raw_message.lower():
+        detail = "图像服务响应超时，本次生成已中止。"
+    else:
+        detail = "生成过程中出现异常，本次任务未完成。"
+
+    return {
+        "role": "assistant",
+        "content": f"{action_label}失败：{detail}\n\n技术信息：{raw_message}",
+    }
+
+
+async def _finalize_direct_generation_response(
+    session_id: str,
+    messages: List[Dict[str, Any]],
+    response: Dict[str, Any],
+) -> None:
+    await db_service.create_message(session_id, "assistant", json.dumps(response))
+    await send_to_websocket(
+        session_id,
+        {"type": "all_messages", "messages": messages + [response]},
+    )
+
+
 def _normalize_reference_image_file_id(data: Dict[str, Any], key: str) -> str:
     return str(data.get(key, "") or "").strip()
 
@@ -133,6 +175,10 @@ def _normalize_image_model(data: Dict[str, Any]) -> str:
     if requested_model:
         return normalize_apipod_image_model_name(requested_model)
     return get_apipod_image_model_name()
+
+
+def _normalize_text_model(data: Dict[str, Any]) -> Optional[ModelInfo]:
+    return get_default_text_model()
 
 
 def _normalize_shot_count(data: Dict[str, Any]) -> int:
@@ -197,12 +243,97 @@ def _resolve_reference_tool(requested_tool_id: str, image_model: str) -> Dict[st
             }
 
     raise RuntimeError(
-        "No reference-image capable image tool is configured. Please enable the APIPod Nano Banana tool."
+        "No reference-image capable image tool is configured. Please enable the APIPod image tool."
     )
 
 
 async def _load_canvas_context(canvas_id: str) -> Dict[str, Any]:
     return await load_canvas_data(canvas_id)
+
+
+def _build_storyboard_prompt_text(
+    *,
+    user_prompt: str,
+    shot_count: int,
+    aspect_ratio: str,
+) -> str:
+    prompt_parts = [
+        "基于当前选中的参考图生成一组可直接用于短视频创作的商业分镜。",
+        "保持同一个主体、服装、产品形态、场景空间和光线逻辑连续，画面风格统一，适合连续剪辑。",
+        f"输出 {shot_count} 张分镜图，按镜头推进自然展开，包含开场、推进、重点和收束。",
+        f"画面比例为 {aspect_ratio}。",
+        "每一张图都要有明确镜头差异，例如景别、机位、动作推进或视线变化，但不要跳到新的场景或新的角色设定。",
+    ]
+
+    normalized_user_prompt = str(user_prompt or "").strip()
+    if normalized_user_prompt:
+        prompt_parts.append(f"额外要求：{normalized_user_prompt}")
+
+    return "\n".join(prompt_parts)
+
+
+async def _compile_storyboard_prompt(
+    *,
+    user_prompt: str,
+    shot_count: int,
+    aspect_ratio: str,
+    text_model: Optional[ModelInfo],
+) -> str:
+    fallback_prompt = _build_storyboard_prompt_text(
+        user_prompt=user_prompt,
+        shot_count=shot_count,
+        aspect_ratio=aspect_ratio,
+    )
+    normalized_user_prompt = str(user_prompt or "").strip()
+    effective_text_model = text_model or get_default_text_model()
+
+    if not normalized_user_prompt or not effective_text_model:
+        return fallback_prompt
+
+    try:
+        brief = await compile_creative_brief(
+            text_model=effective_text_model,
+            user_prompt=normalized_user_prompt,
+            duration=8,
+            aspect_ratio=aspect_ratio,
+            platform_hint="storyboard image generation",
+        )
+        compiled_prompt = compile_image_prompt(
+            brief=brief,
+            original_prompt=fallback_prompt,
+            aspect_ratio=aspect_ratio,
+        )
+        qa_issues = evaluate_image_prompt(compiled_prompt)
+        if qa_issues:
+            compiled_prompt = rewrite_image_prompt(compiled_prompt, qa_issues)
+        return compiled_prompt.strip()
+    except Exception as exc:
+        print("Failed to compile storyboard prompt, using fallback:", exc)
+        return fallback_prompt
+
+
+async def preview_direct_storyboard_prompt(data: Dict[str, Any]) -> Dict[str, Any]:
+    prompt = _normalize_prompt(data)
+    aspect_ratio = _normalize_aspect_ratio(data)
+    shot_count = _normalize_shot_count(data)
+    text_model = _normalize_text_model(data)
+
+    if not prompt:
+        raise RuntimeError("Storyboard prompt preview requires a prompt.")
+
+    compiled_prompt = await _compile_storyboard_prompt(
+        user_prompt=prompt,
+        shot_count=shot_count,
+        aspect_ratio=aspect_ratio,
+        text_model=text_model,
+    )
+
+    return {
+        "prompt": compiled_prompt,
+        "shot_count": shot_count,
+        "aspect_ratio": aspect_ratio,
+        "image_model": get_apipod_image_model_name(),
+    }
 
 
 def _get_canvas_file(canvas_data: Dict[str, Any], file_id: str) -> Dict[str, Any]:
@@ -737,20 +868,41 @@ def _normalize_preset_name(value: Any) -> str:
 
 
 def _preferred_position_from_anchor(
+    canvas_data: Dict[str, Any],
     source_element: Dict[str, Any],
     shot_index: int,
     variant_index: int,
 ) -> Optional[Dict[str, float]]:
     if not source_element:
         return None
+
+    elements = canvas_data.get("elements", []) if isinstance(canvas_data, dict) else []
+    media_elements = [
+        element
+        for element in elements
+        if isinstance(element, dict)
+        and not element.get("isDeleted")
+        and element.get("type") in {"image", "embeddable", "video"}
+    ]
+
     source_x = float(source_element.get("x", 0) or 0)
     source_y = float(source_element.get("y", 0) or 0)
     source_width = float(source_element.get("width", 360) or 360)
     source_height = float(source_element.get("height", 360) or 360)
     gap = 24.0
+
+    if media_elements:
+        rightmost_edge = max(
+            float(element.get("x", 0) or 0) + float(element.get("width", 0) or 0)
+            for element in media_elements
+        )
+        topmost_y = min(float(element.get("y", 0) or 0) for element in media_elements)
+        source_x = max(source_x, rightmost_edge + 48.0)
+        source_y = min(source_y, topmost_y)
+
     return {
         "x": source_x + (variant_index * (source_width + gap)),
-        "y": source_y + source_height + 48.0 + (shot_index * (source_height + gap)),
+        "y": source_y + (shot_index * (source_height + gap)),
     }
 
 
@@ -877,21 +1029,25 @@ async def _process_direct_storyboard(
     skip_prompt_confirmation: bool,
     messages: List[Dict[str, Any]],
 ) -> None:
-    response = await create_direct_storyboard_response(
-        session_id=session_id,
-        canvas_id=canvas_id,
-        prompt=prompt,
-        main_image_file_id=main_image_file_id,
-        reference_image_file_id=reference_image_file_id,
-        aspect_ratio=aspect_ratio,
-        image_model=image_model,
-        shot_count=shot_count,
-        variant_count=variant_count,
-        image_tool_id=image_tool_id,
-        skip_prompt_confirmation=skip_prompt_confirmation,
-    )
-    await db_service.create_message(session_id, "assistant", json.dumps(response))
-    await send_to_websocket(session_id, {"type": "all_messages", "messages": messages + [response]})
+    try:
+        response = await create_direct_storyboard_response(
+            session_id=session_id,
+            canvas_id=canvas_id,
+            prompt=prompt,
+            main_image_file_id=main_image_file_id,
+            reference_image_file_id=reference_image_file_id,
+            aspect_ratio=aspect_ratio,
+            image_model=image_model,
+            shot_count=shot_count,
+            variant_count=variant_count,
+            image_tool_id=image_tool_id,
+            skip_prompt_confirmation=skip_prompt_confirmation,
+        )
+    except Exception as exc:
+        print("Error processing direct storyboard:", exc)
+        traceback.print_exc()
+        response = _build_generation_failure_response("分镜图生成", exc)
+    await _finalize_direct_generation_response(session_id, messages, response)
 
 
 async def create_direct_storyboard_response(
@@ -1080,6 +1236,7 @@ async def create_direct_storyboard_response(
                 "prompt_snapshot": variant_prompts["prompt"],
             },
             preferred_position=_preferred_position_from_anchor(
+                canvas_data,
                 source_element,
                 shot_index,
                 variant_zero_index,
@@ -1165,24 +1322,28 @@ async def _process_direct_multiview(
     framing: str,
     messages: List[Dict[str, Any]],
 ) -> None:
-    response = await create_direct_multiview_response(
-        session_id=session_id,
-        canvas_id=canvas_id,
-        source_file_id=source_file_id,
-        reference_image_file_id=reference_image_file_id,
-        prompt=prompt,
-        image_tool_id=image_tool_id,
-        aspect_ratio=aspect_ratio,
-        image_model=image_model,
-        preview_only=preview_only,
-        replace_source=replace_source,
-        preset_name=preset_name,
-        azimuth=azimuth,
-        elevation=elevation,
-        framing=framing,
-    )
-    await db_service.create_message(session_id, "assistant", json.dumps(response))
-    await send_to_websocket(session_id, {"type": "all_messages", "messages": messages + [response]})
+    try:
+        response = await create_direct_multiview_response(
+            session_id=session_id,
+            canvas_id=canvas_id,
+            source_file_id=source_file_id,
+            reference_image_file_id=reference_image_file_id,
+            prompt=prompt,
+            image_tool_id=image_tool_id,
+            aspect_ratio=aspect_ratio,
+            image_model=image_model,
+            preview_only=preview_only,
+            replace_source=replace_source,
+            preset_name=preset_name,
+            azimuth=azimuth,
+            elevation=elevation,
+            framing=framing,
+        )
+    except Exception as exc:
+        print("Error processing direct multiview:", exc)
+        traceback.print_exc()
+        response = _build_generation_failure_response("多视角候选生成", exc)
+    await _finalize_direct_generation_response(session_id, messages, response)
 
 
 async def create_direct_multiview_response(
@@ -1415,19 +1576,23 @@ async def _process_direct_storyboard_refine(
     mode: str,
     messages: List[Dict[str, Any]],
 ) -> None:
-    response = await create_direct_storyboard_refine_response(
-        session_id=session_id,
-        canvas_id=canvas_id,
-        source_file_id=source_file_id,
-        reference_image_file_id=reference_image_file_id,
-        prompt=prompt,
-        image_tool_id=image_tool_id,
-        aspect_ratio=aspect_ratio,
-        image_model=image_model,
-        mode=mode,
-    )
-    await db_service.create_message(session_id, "assistant", json.dumps(response))
-    await send_to_websocket(session_id, {"type": "all_messages", "messages": messages + [response]})
+    try:
+        response = await create_direct_storyboard_refine_response(
+            session_id=session_id,
+            canvas_id=canvas_id,
+            source_file_id=source_file_id,
+            reference_image_file_id=reference_image_file_id,
+            prompt=prompt,
+            image_tool_id=image_tool_id,
+            aspect_ratio=aspect_ratio,
+            image_model=image_model,
+            mode=mode,
+        )
+    except Exception as exc:
+        print("Error processing storyboard refine:", exc)
+        traceback.print_exc()
+        response = _build_generation_failure_response("分镜编辑", exc)
+    await _finalize_direct_generation_response(session_id, messages, response)
 
 
 async def create_direct_storyboard_refine_response(

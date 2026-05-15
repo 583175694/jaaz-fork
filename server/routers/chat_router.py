@@ -5,6 +5,7 @@ from services.direct_storyboard_service import (
     handle_direct_multiview,
     handle_direct_storyboard,
     handle_direct_storyboard_refine,
+    preview_direct_storyboard_prompt,
     set_storyboard_primary_variant,
 )
 from services.direct_video_service import handle_direct_video, preview_direct_video_prompt
@@ -96,6 +97,13 @@ async def direct_storyboard(request: Request):
     data = await request.json()
     await handle_direct_storyboard(data)
     return {"status": "done"}
+
+
+@router.post("/direct_storyboard/prompt_preview")
+async def direct_storyboard_prompt_preview(request: Request):
+    data = await request.json()
+    result = await preview_direct_storyboard_prompt(data)
+    return {"status": "done", "result": result}
 
 
 @router.post("/direct_multiview")

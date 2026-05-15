@@ -82,7 +82,7 @@ const ChatCanvasStoryboardGenerator: React.FC<
           content: [
             {
               type: 'text',
-              text: data.finalPrompt,
+              text: data.prompt,
             },
             {
               type: 'image_url',
@@ -103,7 +103,7 @@ const ChatCanvasStoryboardGenerator: React.FC<
           newMessages,
           mainImageFileId: resolvedImage.canvasFileId,
           referenceImageFileId: resolvedImage.referenceImageFileId,
-          prompt: data.finalPrompt,
+          prompt: data.prompt,
           shotCount: data.shotCount,
           aspectRatio: data.aspectRatio,
           imageToolId,

@@ -1,5 +1,31 @@
 import { Message } from '@/types/types'
+import { Model } from '@/types/types'
 import { ImageModelOption } from '@/lib/imageModels'
+
+export const previewDirectStoryboardPrompt = async (payload: {
+  textModel?: Model
+  prompt: string
+  shotCount: number
+  aspectRatio: string
+}) => {
+  const response = await fetch('/api/direct_storyboard/prompt_preview', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      text_model: payload.textModel,
+      prompt: payload.prompt,
+      shot_count: payload.shotCount,
+      aspect_ratio: payload.aspectRatio,
+    }),
+  })
+  if (!response.ok) {
+    throw new Error(`Direct storyboard prompt preview failed: ${response.status}`)
+  }
+  const json = await response.json()
+  return json?.result
+}
 
 export const sendDirectStoryboardGenerate = async (payload: {
   sessionId: string
