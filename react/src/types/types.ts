@@ -44,6 +44,31 @@ export type Message = UserMessage | AssistantMessage | ToolResultMessage
 
 export type PendingType = 'text' | 'image' | 'tool' | false
 
+export type GenerationJobStatus =
+  | 'queued'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled'
+
+export interface GenerationJob {
+  id: string
+  type: string
+  session_id: string
+  canvas_id: string
+  status: GenerationJobStatus
+  provider: string
+  provider_task_id?: string | null
+  request_payload?: unknown
+  result_payload?: unknown
+  error_message?: string | null
+  progress?: number | null
+  created_at: string
+  updated_at: string
+  started_at?: string | null
+  finished_at?: string | null
+}
+
 export interface ChatSession {
   id: string
   model: string

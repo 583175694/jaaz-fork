@@ -2,11 +2,18 @@ import asyncio
 import json
 from typing import Any, Dict, List, Optional
 
-from nanoid import generate
-
 from models.config_model import ModelInfo
 from services.ad_video_prompt_runtime import compile_ad_video_prompt
 from services.db_service import db_service
+from services.generation_job_service import (
+    JOB_PROVIDER_APIPOD_VIDEO,
+    JOB_TYPE_DIRECT_VIDEO,
+    create_job,
+    mark_job_failed,
+    mark_job_succeeded,
+    register_job_runner,
+    update_job_progress,
+)
 from services.prompt_confirmation_service import request_prompt_bundle_confirmation
 from services.production_workflow_service import (
     build_video_brief_asset,
@@ -15,11 +22,11 @@ from services.production_workflow_service import (
     load_canvas_data,
     upsert_video_brief,
 )
-from services.stream_service import add_stream_task, get_stream_task, remove_stream_task
 from services.websocket_service import send_to_websocket
 from services.runtime_defaults import get_default_text_model
 from tools.utils.image_utils import process_input_image
-from tools.video_generation.video_generation_core import generate_video_with_provider
+from tools.video_generation.video_canvas_utils import process_video_result
+from tools.video_providers.apipod_provider import APIPodVideoProvider
 from tools.video_providers.apipod_provider import (
     APIPOD_VIDEO_REFERENCE_IMAGES_MAX,
     apipod_video_supports_multi_reference_images,
@@ -27,21 +34,6 @@ from tools.video_providers.apipod_provider import (
     get_apipod_video_model_name,
     normalize_apipod_video_model_name,
 )
-
-
-def _build_model_info(model_name: str) -> Dict[str, List[ModelInfo]]:
-    return {
-        model_name: [
-            {
-                "provider": "apipodvideo",
-                "model": model_name,
-                "url": "",
-                "type": "video",
-            }
-        ]
-    }
-
-
 def _normalize_text_model(data: Dict[str, Any]) -> Optional[ModelInfo]:
     return get_default_text_model()
 
@@ -296,7 +288,7 @@ def _build_video_prompt_confirmation_payload(
     }
 
 
-async def handle_direct_video(data: Dict[str, Any]) -> None:
+async def handle_direct_video(data: Dict[str, Any]) -> Dict[str, Any]:
     messages: List[Dict[str, Any]] = data.get("messages", [])
     session_id: str = data.get("session_id", "")
     canvas_id: str = data.get("canvas_id", "")
@@ -348,24 +340,6 @@ async def handle_direct_video(data: Dict[str, Any]) -> None:
             },
         )
 
-    existing_task = get_stream_task(session_id)
-    if existing_task and not existing_task.done():
-        print(
-            "🎬 direct_video duplicate request ignored",
-            {
-                "session_id": session_id,
-                "canvas_id": canvas_id,
-            },
-        )
-        await send_to_websocket(
-            session_id,
-            {
-                "type": "info",
-                "info": "视频生成正在进行中，请等待当前任务完成。",
-            },
-        )
-        return
-
     existing_sessions = await db_service.list_sessions(canvas_id)
     if not any(session.get("id") == session_id for session in existing_sessions):
         await db_service.create_chat_session(
@@ -376,53 +350,46 @@ async def handle_direct_video(data: Dict[str, Any]) -> None:
             (prompt[:200] if prompt else "Generate Video"),
         )
 
-    if len(messages) > 0:
+    job = await create_job(
+        job_type=JOB_TYPE_DIRECT_VIDEO,
+        session_id=session_id,
+        canvas_id=canvas_id,
+        provider=JOB_PROVIDER_APIPOD_VIDEO,
+        request_payload={
+            "messages": messages,
+            "session_id": session_id,
+            "canvas_id": canvas_id,
+            "text_model": text_model,
+            "prompt": prompt,
+            "file_ids": file_ids,
+            "video_model": video_model,
+            "selection_mode": selection_mode,
+            "start_frame_file_id": start_frame_file_id,
+            "end_frame_file_id": end_frame_file_id,
+            "duration": duration,
+            "aspect_ratio": aspect_ratio,
+            "resolution": resolution,
+            "skip_prompt_confirmation": skip_prompt_confirmation,
+            "skip_prompt_compilation": skip_prompt_compilation,
+        },
+    )
+
+    if not bool(job.get("deduplicated")) and len(messages) > 0:
         await db_service.create_message(
             session_id, messages[-1].get("role", "user"), json.dumps(messages[-1])
         )
 
-    task = asyncio.create_task(
-        _process_direct_video_generation(
-            messages=messages,
-            session_id=session_id,
-            canvas_id=canvas_id,
-            prompt=prompt,
-            file_ids=file_ids,
-            selection_mode=selection_mode,
-            start_frame_file_id=start_frame_file_id,
-            end_frame_file_id=end_frame_file_id,
-            duration=duration,
-            aspect_ratio=aspect_ratio,
-            resolution=resolution,
-            text_model=text_model,
-            video_model=video_model,
-            skip_prompt_confirmation=skip_prompt_confirmation,
-            skip_prompt_compilation=skip_prompt_compilation,
-        )
-    )
     print(
-        "🎬 direct_video task created",
+        "🎬 direct_video job accepted",
         {
+            "job_id": job.get("id"),
             "session_id": session_id,
             "canvas_id": canvas_id,
             "file_count": len(file_ids),
+            "deduplicated": bool(job.get("deduplicated")),
         },
     )
-    add_stream_task(session_id, task)
-    try:
-        await task
-        print(
-            "🎬 direct_video task completed",
-            {
-                "session_id": session_id,
-                "canvas_id": canvas_id,
-            },
-        )
-    except asyncio.exceptions.CancelledError:
-        print(f"🛑Direct video generation session {session_id} cancelled")
-    finally:
-        remove_stream_task(session_id)
-        await send_to_websocket(session_id, {"type": "done"})
+    return job
 
 
 async def preview_direct_video_prompt(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -475,48 +442,6 @@ async def preview_direct_video_prompt(data: Dict[str, Any]) -> Dict[str, Any]:
         ),
         "video_model": video_model,
     }
-
-
-async def _process_direct_video_generation(
-    messages: List[Dict[str, Any]],
-    session_id: str,
-    canvas_id: str,
-    prompt: str,
-    file_ids: List[str],
-    selection_mode: str,
-    start_frame_file_id: str,
-    end_frame_file_id: str,
-    duration: int,
-    aspect_ratio: str,
-    resolution: str,
-    text_model: Optional[ModelInfo],
-    video_model: str,
-    skip_prompt_confirmation: bool,
-    skip_prompt_compilation: bool,
-) -> None:
-    ai_response = await create_direct_video_response(
-        session_id=session_id,
-        canvas_id=canvas_id,
-        prompt=prompt,
-        messages=messages,
-        file_ids=file_ids,
-        selection_mode=selection_mode,
-        start_frame_file_id=start_frame_file_id,
-        end_frame_file_id=end_frame_file_id,
-        duration=duration,
-        aspect_ratio=aspect_ratio,
-        resolution=resolution,
-        text_model=text_model,
-        video_model=video_model,
-        skip_prompt_confirmation=skip_prompt_confirmation,
-        skip_prompt_compilation=skip_prompt_compilation,
-    )
-
-    await db_service.create_message(session_id, "assistant", json.dumps(ai_response))
-    all_messages = messages + [ai_response]
-    await send_to_websocket(
-        session_id, {"type": "all_messages", "messages": all_messages}
-    )
 
 
 async def create_direct_video_response(
@@ -728,29 +653,18 @@ async def create_direct_video_response(
 
         normalized_input_images = input_images or None
 
-        result = await generate_video_with_provider(
-            prompt=execution_prompt,
-            resolution=resolution,
-            duration=duration,
-            aspect_ratio=aspect_ratio,
-            model=video_model,
-            tool_call_id=f"call_direct_video_{generate(size=8)}",
-            config={
-                "configurable": {
-                    "canvas_id": canvas_id,
-                    "session_id": session_id,
-                    "model_info": _build_model_info(video_model),
-                }
-            },
-            input_images=normalized_input_images,
-            source_file_ids=reference_file_ids,
-            camera_fixed=True,
-            provider_hint="apipodvideo",
-        )
-
         return {
             "role": "assistant",
-            "content": result,
+            "content": "",
+            "metadata": {
+                "execution_prompt": execution_prompt,
+                "reference_file_ids": reference_file_ids,
+                "normalized_input_images": normalized_input_images,
+                "video_model": video_model,
+                "resolution": resolution,
+                "duration": duration,
+                "aspect_ratio": aspect_ratio,
+            },
         }
     except Exception as e:
         error_msg = str(e)
@@ -759,3 +673,168 @@ async def create_direct_video_response(
             "role": "assistant",
             "content": [{"type": "text", "text": f"🎬 Video Error: {error_msg}"}],
         }
+
+
+async def process_direct_video_job(job_id: str) -> None:
+    job = await db_service.get_generation_job(job_id)
+    if not job:
+        raise RuntimeError(f"job not found: {job_id}")
+
+    payload = job.get("request_payload")
+    if not isinstance(payload, str):
+        raise RuntimeError("job request payload is invalid")
+    data = json.loads(payload)
+
+    messages: List[Dict[str, Any]] = data.get("messages", [])
+    session_id: str = str(data.get("session_id", "") or "")
+    canvas_id: str = str(data.get("canvas_id", "") or "")
+    prompt: str = str(data.get("prompt", "") or "")
+    file_ids = _normalize_file_ids(data)
+    selection_mode = _normalize_selection_mode(data)
+    start_frame_file_id = _normalize_frame_file_id(data, "start_frame_file_id")
+    end_frame_file_id = _normalize_frame_file_id(data, "end_frame_file_id")
+    duration: int = int(data.get("duration", 6) or 6)
+    aspect_ratio: str = str(data.get("aspect_ratio", "16:9") or "16:9")
+    resolution: str = str(data.get("resolution", "1080p") or "1080p")
+    text_model = data.get("text_model") if isinstance(data.get("text_model"), dict) else _normalize_text_model(data)
+    video_model = _normalize_video_model(data)
+    skip_prompt_confirmation = _normalize_skip_prompt_confirmation(data)
+    skip_prompt_compilation = _normalize_skip_prompt_compilation(data)
+
+    ai_response = await create_direct_video_response(
+        session_id=session_id,
+        canvas_id=canvas_id,
+        prompt=prompt,
+        messages=messages,
+        file_ids=file_ids,
+        selection_mode=selection_mode,
+        start_frame_file_id=start_frame_file_id,
+        end_frame_file_id=end_frame_file_id,
+        duration=duration,
+        aspect_ratio=aspect_ratio,
+        resolution=resolution,
+        text_model=text_model,
+        video_model=video_model,
+        skip_prompt_confirmation=skip_prompt_confirmation,
+        skip_prompt_compilation=skip_prompt_compilation,
+    )
+
+    content = ai_response.get("content")
+    if isinstance(content, list):
+        error_text = ""
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "text":
+                error_text = str(item.get("text", "") or "")
+                break
+        await db_service.create_message(session_id, "assistant", json.dumps(ai_response))
+        all_messages = messages + [ai_response]
+        await send_to_websocket(
+            session_id, {"type": "all_messages", "messages": all_messages}
+        )
+        await mark_job_failed(job_id, error_message=error_text or "Video generation failed")
+        await send_to_websocket(session_id, {"type": "done"})
+        return
+    if isinstance(content, str) and content.strip():
+        await db_service.create_message(session_id, "assistant", json.dumps(ai_response))
+        all_messages = messages + [ai_response]
+        await send_to_websocket(
+            session_id, {"type": "all_messages", "messages": all_messages}
+        )
+        await mark_job_failed(job_id, error_message=content.strip())
+        await send_to_websocket(session_id, {"type": "done"})
+        return
+
+    metadata = ai_response.get("metadata")
+    if not isinstance(metadata, dict):
+        raise RuntimeError("direct video metadata is missing")
+
+    provider = APIPodVideoProvider()
+    created = await provider.create_generation_task(
+        prompt=str(metadata.get("execution_prompt", "") or ""),
+        model=str(metadata.get("video_model", video_model) or video_model),
+        aspect_ratio=str(metadata.get("aspect_ratio", aspect_ratio) or aspect_ratio),
+        input_images=metadata.get("normalized_input_images"),
+    )
+
+    provider_task_id = str(created.get("provider_task_id", "") or "")
+    created_progress = created.get("progress")
+    normalized_result_payload = {
+        "provider_status": created.get("provider_status"),
+        "video_url": created.get("video_url"),
+    }
+    await update_job_progress(
+        job_id,
+        progress=created_progress if isinstance(created_progress, int) else 0,
+        provider_task_id=provider_task_id or None,
+        result_payload=normalized_result_payload,
+    )
+
+    video_url = str(created.get("video_url", "") or "")
+    download_headers = None
+    if not video_url and provider_task_id:
+        deadline = asyncio.get_running_loop().time() + provider.max_wait
+        while asyncio.get_running_loop().time() < deadline:
+            polled = await provider.poll_generation_task(provider_task_id)
+            progress = polled.get("progress")
+            await update_job_progress(
+                job_id,
+                progress=progress if isinstance(progress, int) else None,
+                provider_task_id=provider_task_id,
+                result_payload={
+                    "provider_status": polled.get("provider_status"),
+                    "video_url": polled.get("video_url"),
+                },
+            )
+            if polled.get("status") == "succeeded":
+                video_url = str(polled.get("video_url", "") or "")
+                break
+            if polled.get("status") == "failed":
+                raise RuntimeError(
+                    str(polled.get("error_message", "") or "APIPod video task failed")
+                )
+            await send_to_websocket(
+                session_id,
+                {
+                    "type": "info",
+                    "info": f"视频生成中，当前进度 {progress if isinstance(progress, int) else 0}%",
+                },
+            )
+            await asyncio.sleep(5)
+
+        if not video_url:
+            raise RuntimeError(
+                f"APIPod video task timed out ({provider.max_wait}s), task_id={provider_task_id}"
+            )
+
+    if not video_url:
+        raise RuntimeError("APIPod video completed without video URL")
+
+    result_text = await process_video_result(
+        video_url=video_url,
+        session_id=session_id,
+        canvas_id=canvas_id,
+        provider_name=f"{video_model} (apipodvideo)",
+        download_headers=download_headers,
+        source_file_ids=metadata.get("reference_file_ids"),
+    )
+
+    final_ai_response = {
+        "role": "assistant",
+        "content": result_text,
+    }
+    await db_service.create_message(session_id, "assistant", json.dumps(final_ai_response))
+    all_messages = messages + [final_ai_response]
+    await send_to_websocket(
+        session_id, {"type": "all_messages", "messages": all_messages}
+    )
+    await mark_job_succeeded(
+        job_id,
+        result_payload={
+            "video_url": video_url,
+            "message": result_text,
+        },
+    )
+    await send_to_websocket(session_id, {"type": "done"})
+
+
+register_job_runner(JOB_TYPE_DIRECT_VIDEO, process_direct_video_job)

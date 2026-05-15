@@ -1,8 +1,8 @@
-import { sendDirectVideoGenerate } from '@/api/video'
+import { listCanvasGenerationJobs, sendDirectVideoGenerate } from '@/api/video'
 import { getCanvas } from '@/api/canvas'
 import { uploadImage } from '@/api/upload'
 import { useConfigs } from '@/contexts/configs'
-import { eventBus, TCanvasGenerateVideoEvent } from '@/lib/event'
+import { eventBus, TCanvasGenerateVideoEvent, TEvents } from '@/lib/event'
 import { dataURLToFile } from '@/lib/utils'
 import { Message, PendingType } from '@/types/types'
 import { useCallback, useEffect, useRef } from 'react'
@@ -29,10 +29,29 @@ const ChatCanvasVideoGenerator: React.FC<ChatCanvasVideoGeneratorProps> = ({
 }) => {
   const { textModel } = useConfigs()
   const inFlightRef = useRef(false)
+  const activeJobIdRef = useRef<string | null>(null)
+
+  const isMatchingVideoJobEvent = useCallback(
+    (
+      data:
+        | TEvents['Socket::Session::JobQueued']
+        | TEvents['Socket::Session::JobRunning']
+        | TEvents['Socket::Session::JobProgress']
+        | TEvents['Socket::Session::JobSucceeded']
+        | TEvents['Socket::Session::JobFailed']
+    ) => {
+      return (
+        data.canvas_id === canvasId &&
+        data.session_id === sessionId &&
+        data.job_type === 'direct_video'
+      )
+    },
+    [canvasId, sessionId]
+  )
 
   const handleGenerateVideo = useCallback(
     async (data: TCanvasGenerateVideoEvent) => {
-      if (inFlightRef.current) {
+      if (inFlightRef.current || activeJobIdRef.current) {
         toast.info('视频生成正在进行中，请等待当前任务完成')
         return
       }
@@ -114,7 +133,7 @@ const ChatCanvasVideoGenerator: React.FC<ChatCanvasVideoGeneratorProps> = ({
         setMessages(newMessages)
         scrollToBottom()
 
-        await sendDirectVideoGenerate({
+        const response = await sendDirectVideoGenerate({
           sessionId,
           canvasId,
           newMessages: newMessages,
@@ -131,45 +150,14 @@ const ChatCanvasVideoGenerator: React.FC<ChatCanvasVideoGeneratorProps> = ({
           skipPromptConfirmation: true,
           skipPromptCompilation: true,
         })
-
-        const startedAt = Date.now()
-        let foundVideo = false
-        while (Date.now() - startedAt < 15000) {
-          try {
-            const latestCanvas = await getCanvas(canvasId)
-            const files = latestCanvas?.data?.files || {}
-            const hasNewVideo = Object.values(files).some((file: any) =>
-              String(file?.mimeType || '').startsWith('video/')
-            )
-            if (hasNewVideo) {
-              console.log('🎥 Video detected via canvas poll fallback', {
-                canvasId,
-              })
-              window.dispatchEvent(
-                new CustomEvent('app:refresh-canvas', {
-                  detail: {
-                    canvasId,
-                    reason: 'direct-video-fallback',
-                  },
-                })
-              )
-              foundVideo = true
-              break
-            }
-          } catch (pollError) {
-            console.warn('⚠️ Failed to poll canvas after direct video', pollError)
-          }
-          await new Promise((resolve) => setTimeout(resolve, 1000))
-        }
-
-        if (!foundVideo) {
-          console.warn('⚠️ Direct video completed but no video file found during fallback poll', {
-            canvasId,
-            sessionId,
-          })
-        }
-
-        setPending(false)
+        activeJobIdRef.current = response.job_id
+        setPending('text')
+        toast.success('视频任务已提交', {
+          description:
+            response.job.status === 'queued'
+              ? '任务已进入队列'
+              : '任务已开始生成',
+        })
       } catch (error) {
         console.error('Failed to send canvas video generation message:', error)
         toast.error('发起视频生成失败', {
@@ -192,12 +180,104 @@ const ChatCanvasVideoGenerator: React.FC<ChatCanvasVideoGeneratorProps> = ({
   )
 
   useEffect(() => {
+    const handleJobQueued = (data: TEvents['Socket::Session::JobQueued']) => {
+      if (!isMatchingVideoJobEvent(data)) {
+        return
+      }
+      activeJobIdRef.current = data.job_id
+      setPending('text')
+    }
+
+    const handleJobRunning = (data: TEvents['Socket::Session::JobRunning']) => {
+      if (!isMatchingVideoJobEvent(data)) {
+        return
+      }
+      activeJobIdRef.current = data.job_id
+      setPending('text')
+    }
+
+    const handleJobProgress = (data: TEvents['Socket::Session::JobProgress']) => {
+      if (!isMatchingVideoJobEvent(data)) {
+        return
+      }
+      activeJobIdRef.current = data.job_id
+      setPending('text')
+    }
+
+    const handleJobSucceeded = (data: TEvents['Socket::Session::JobSucceeded']) => {
+      if (!isMatchingVideoJobEvent(data)) {
+        return
+      }
+      activeJobIdRef.current = null
+      setPending(false)
+      window.dispatchEvent(
+        new CustomEvent('app:refresh-canvas', {
+          detail: {
+            canvasId,
+            reason: 'direct-video-job-succeeded',
+          },
+        })
+      )
+    }
+
+    const handleJobFailed = (data: TEvents['Socket::Session::JobFailed']) => {
+      if (!isMatchingVideoJobEvent(data)) {
+        return
+      }
+      activeJobIdRef.current = null
+      setPending(false)
+      toast.error('视频生成失败', {
+        description: data.error_message || '后台任务执行失败',
+      })
+    }
+
     eventBus.on('Canvas::GenerateVideo', handleGenerateVideo)
+    eventBus.on('Socket::Session::JobQueued', handleJobQueued)
+    eventBus.on('Socket::Session::JobRunning', handleJobRunning)
+    eventBus.on('Socket::Session::JobProgress', handleJobProgress)
+    eventBus.on('Socket::Session::JobSucceeded', handleJobSucceeded)
+    eventBus.on('Socket::Session::JobFailed', handleJobFailed)
 
     return () => {
       eventBus.off('Canvas::GenerateVideo', handleGenerateVideo)
+      eventBus.off('Socket::Session::JobQueued', handleJobQueued)
+      eventBus.off('Socket::Session::JobRunning', handleJobRunning)
+      eventBus.off('Socket::Session::JobProgress', handleJobProgress)
+      eventBus.off('Socket::Session::JobSucceeded', handleJobSucceeded)
+      eventBus.off('Socket::Session::JobFailed', handleJobFailed)
     }
-  }, [handleGenerateVideo])
+  }, [canvasId, handleGenerateVideo, isMatchingVideoJobEvent, setPending])
+
+  useEffect(() => {
+    let mounted = true
+
+    const restoreActiveJobs = async () => {
+      try {
+        const response = await listCanvasGenerationJobs(canvasId, {
+          type: 'direct_video',
+          status: 'queued,running',
+          limit: 20,
+        })
+        if (!mounted) {
+          return
+        }
+        const activeJob = response.jobs.find((job) => job.session_id === sessionId)
+        if (!activeJob) {
+          return
+        }
+        activeJobIdRef.current = activeJob.id
+        setPending('text')
+      } catch (error) {
+        console.warn('⚠️ Failed to restore active direct video jobs', error)
+      }
+    }
+
+    restoreActiveJobs()
+
+    return () => {
+      mounted = false
+    }
+  }, [canvasId, sessionId, setPending])
 
   return null
 }

@@ -7,6 +7,11 @@ export enum SessionEventType {
   Done = 'done',
   Info = 'info',
   VideoGenerationStarted = 'video_generation_started',
+  JobQueued = 'job_queued',
+  JobRunning = 'job_running',
+  JobProgress = 'job_progress',
+  JobSucceeded = 'job_succeeded',
+  JobFailed = 'job_failed',
   ImageGenerated = 'image_generated',
   VideoGenerated = 'video_generated',
   Delta = 'delta',
@@ -48,6 +53,35 @@ export interface SessionVideoGeneratedEvent extends SessionBaseEvent {
   file: BinaryFileData & { duration?: number }
   canvas_id: string
   video_url: string
+}
+
+export interface SessionJobBaseEvent extends SessionBaseEvent {
+  job_id: string
+  job_type: string
+  status: string
+  progress?: number
+  error_message?: string
+  canvas_id: string
+}
+
+export interface SessionJobQueuedEvent extends SessionJobBaseEvent {
+  type: SessionEventType.JobQueued
+}
+
+export interface SessionJobRunningEvent extends SessionJobBaseEvent {
+  type: SessionEventType.JobRunning
+}
+
+export interface SessionJobProgressEvent extends SessionJobBaseEvent {
+  type: SessionEventType.JobProgress
+}
+
+export interface SessionJobSucceededEvent extends SessionJobBaseEvent {
+  type: SessionEventType.JobSucceeded
+}
+
+export interface SessionJobFailedEvent extends SessionJobBaseEvent {
+  type: SessionEventType.JobFailed
 }
 
 export interface SessionDeltaEvent extends SessionBaseEvent {
@@ -100,6 +134,11 @@ export interface SessionToolCallCancelledEvent extends SessionBaseEvent {
 }
 
 export type SessionUpdateEvent =
+  | SessionJobQueuedEvent
+  | SessionJobRunningEvent
+  | SessionJobProgressEvent
+  | SessionJobSucceededEvent
+  | SessionJobFailedEvent
   | SessionDeltaEvent
   | SessionToolCallEvent
   | SessionToolCallArgumentsEvent

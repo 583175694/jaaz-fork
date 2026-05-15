@@ -22,6 +22,7 @@ print('Importing websocket_service')
 from services.websocket_service import broadcast_init_done
 print('Importing config_service')
 from services.config_service import config_service
+from services.generation_job_service import recover_generation_jobs
 from services.auth_service import AuthMiddleware
 print('Importing tool_service')
 from services.tool_service import tool_service
@@ -29,6 +30,8 @@ from services.tool_service import tool_service
 async def initialize():
     print('Initializing config_service')
     await config_service.initialize()
+    print('Recovering generation jobs')
+    await recover_generation_jobs()
     print('Initializing broadcast_init_done')
     await broadcast_init_done()
 

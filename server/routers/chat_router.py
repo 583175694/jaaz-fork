@@ -8,6 +8,7 @@ from services.direct_storyboard_service import (
     set_storyboard_primary_variant,
 )
 from services.direct_video_service import handle_direct_video, preview_direct_video_prompt
+from services.generation_job_service import get_job, list_canvas_jobs
 from services.stream_service import get_stream_task
 
 router = APIRouter(prefix="/api")
@@ -53,8 +54,34 @@ async def cancel_chat(session_id: str):
 @router.post("/direct_video")
 async def direct_video(request: Request):
     data = await request.json()
-    await handle_direct_video(data)
-    return {"status": "done"}
+    job = await handle_direct_video(data)
+    return {
+        "status": "accepted",
+        "job_id": job.get("id"),
+        "job": job,
+    }
+
+
+@router.get("/jobs/{job_id}")
+async def generation_job(job_id: str):
+    return {"job": await get_job(job_id)}
+
+
+@router.get("/canvases/{canvas_id}/jobs")
+async def canvas_generation_jobs(
+    canvas_id: str,
+    type: str | None = None,
+    status: str | None = None,
+    limit: int = 20,
+):
+    statuses = [item.strip() for item in str(status or "").split(",") if item.strip()]
+    jobs = await list_canvas_jobs(
+        canvas_id,
+        job_type=type,
+        statuses=statuses or None,
+        limit=limit,
+    )
+    return {"jobs": jobs}
 
 
 @router.post("/direct_video/prompt_preview")

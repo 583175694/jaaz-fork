@@ -392,5 +392,202 @@ class DatabaseService:
         except json.JSONDecodeError as exc:
             raise ValueError(f"Stored workflow api_json is not valid JSON: {exc}")
 
+    async def create_generation_job(
+        self,
+        *,
+        id: str,
+        type: str,
+        session_id: str,
+        canvas_id: str,
+        status: str,
+        provider: str,
+        request_payload: str,
+        provider_task_id: Optional[str] = None,
+        result_payload: Optional[str] = None,
+        error_message: Optional[str] = None,
+        progress: Optional[int] = None,
+        started_at: Optional[str] = None,
+        finished_at: Optional[str] = None,
+    ) -> None:
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                """
+                INSERT INTO generation_jobs (
+                    id, type, session_id, canvas_id, status, provider,
+                    provider_task_id, request_payload, result_payload,
+                    error_message, progress, started_at, finished_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    id,
+                    type,
+                    session_id,
+                    canvas_id,
+                    status,
+                    provider,
+                    provider_task_id,
+                    request_payload,
+                    result_payload,
+                    error_message,
+                    progress,
+                    started_at,
+                    finished_at,
+                ),
+            )
+            await db.commit()
+
+    async def get_generation_job(self, job_id: str) -> Optional[Dict[str, Any]]:
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = sqlite3.Row
+            cursor = await db.execute(
+                """
+                SELECT id, type, session_id, canvas_id, status, provider,
+                       provider_task_id, request_payload, result_payload,
+                       error_message, progress, created_at, updated_at,
+                       started_at, finished_at
+                FROM generation_jobs
+                WHERE id = ?
+                """,
+                (job_id,),
+            )
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
+    async def update_generation_job(
+        self,
+        job_id: str,
+        **fields: Any,
+    ) -> None:
+        if not fields:
+            return
+
+        allowed_fields = {
+            "status",
+            "provider_task_id",
+            "result_payload",
+            "error_message",
+            "progress",
+            "started_at",
+            "finished_at",
+            "request_payload",
+        }
+        updates: List[str] = []
+        params: List[Any] = []
+        for key, value in fields.items():
+            if key not in allowed_fields:
+                continue
+            updates.append(f"{key} = ?")
+            params.append(value)
+
+        if not updates:
+            return
+
+        updates.append("updated_at = STRFTIME('%Y-%m-%dT%H:%M:%fZ', 'now')")
+        params.append(job_id)
+
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                f"""
+                UPDATE generation_jobs
+                SET {", ".join(updates)}
+                WHERE id = ?
+                """,
+                tuple(params),
+            )
+            await db.commit()
+
+    async def list_generation_jobs(
+        self,
+        *,
+        canvas_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        type: Optional[str] = None,
+        statuses: Optional[List[str]] = None,
+        limit: int = 20,
+    ) -> List[Dict[str, Any]]:
+        query = """
+            SELECT id, type, session_id, canvas_id, status, provider,
+                   provider_task_id, request_payload, result_payload,
+                   error_message, progress, created_at, updated_at,
+                   started_at, finished_at
+            FROM generation_jobs
+        """
+        conditions: List[str] = []
+        params: List[Any] = []
+
+        if canvas_id:
+            conditions.append("canvas_id = ?")
+            params.append(canvas_id)
+        if session_id:
+            conditions.append("session_id = ?")
+            params.append(session_id)
+        if type:
+            conditions.append("type = ?")
+            params.append(type)
+        if statuses:
+            placeholders = ",".join("?" for _ in statuses)
+            conditions.append(f"status IN ({placeholders})")
+            params.extend(statuses)
+
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+
+        query += " ORDER BY created_at DESC, id DESC LIMIT ?"
+        params.append(limit)
+
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = sqlite3.Row
+            cursor = await db.execute(query, tuple(params))
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    async def find_active_generation_job(
+        self,
+        *,
+        session_id: str,
+        canvas_id: str,
+        type: str,
+        request_payload: str,
+    ) -> Optional[Dict[str, Any]]:
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = sqlite3.Row
+            cursor = await db.execute(
+                """
+                SELECT id, type, session_id, canvas_id, status, provider,
+                       provider_task_id, request_payload, result_payload,
+                       error_message, progress, created_at, updated_at,
+                       started_at, finished_at
+                FROM generation_jobs
+                WHERE session_id = ?
+                  AND canvas_id = ?
+                  AND type = ?
+                  AND request_payload = ?
+                  AND status IN ('queued', 'running')
+                ORDER BY created_at DESC, id DESC
+                LIMIT 1
+                """,
+                (session_id, canvas_id, type, request_payload),
+            )
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
+    async def list_recoverable_generation_jobs(self) -> List[Dict[str, Any]]:
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = sqlite3.Row
+            cursor = await db.execute(
+                """
+                SELECT id, type, session_id, canvas_id, status, provider,
+                       provider_task_id, request_payload, result_payload,
+                       error_message, progress, created_at, updated_at,
+                       started_at, finished_at
+                FROM generation_jobs
+                WHERE status IN ('queued', 'running')
+                ORDER BY created_at ASC, id ASC
+                """
+            )
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+
 # Create a singleton instance
 db_service = DatabaseService()

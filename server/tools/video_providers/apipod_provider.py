@@ -3,7 +3,6 @@ import asyncio
 import json
 import mimetypes
 import os
-import time
 import traceback
 from typing import Any, Dict, Optional
 from urllib.parse import urlparse
@@ -327,58 +326,156 @@ class APIPodVideoProvider(VideoProviderBase, provider_name="apipodvideo"):
 
         return payload
 
-    async def _poll_task(self, task_id: str) -> dict[str, Any]:
+    def _normalize_task_status(self, result: dict[str, Any]) -> dict[str, Any]:
+        task_data = result.get("data") or {}
+        status = str(task_data.get("status", "")).lower()
+        progress_value = task_data.get("progress")
+        progress: int | None = None
+        if isinstance(progress_value, (int, float)):
+            progress = max(0, min(100, int(progress_value)))
+        elif isinstance(progress_value, str):
+            stripped = progress_value.strip()
+            if stripped.isdigit():
+                progress = max(0, min(100, int(stripped)))
+
+        normalized_status = "running"
+        error_message = ""
+        if status in {"completed", "succeeded", "success"}:
+            normalized_status = "succeeded"
+        elif status in {"failed", "error", "cancelled"}:
+            normalized_status = "failed"
+            error_message = str(
+                task_data.get("error")
+                or task_data.get("error_message")
+                or task_data.get("message")
+                or "Unknown error"
+            )
+
+        return {
+            "status": normalized_status,
+            "provider_status": status or "running",
+            "progress": progress,
+            "video_url": _extract_video_url(result),
+            "error_message": error_message,
+            "raw_result": result,
+        }
+
+    async def create_generation_task(
+        self,
+        prompt: str,
+        model: str,
+        aspect_ratio: str = "16:9",
+        input_images: Optional[list[str]] = None,
+    ) -> dict[str, Any]:
+        model_name = str(model or self.model_name).strip() or self.model_name
+        payload = await self._build_payload(
+            model_name=model_name,
+            prompt=prompt,
+            aspect_ratio=aspect_ratio,
+            input_images=input_images,
+        )
+        print(
+            "🎥 APIPod video create request",
+            {
+                "model_name": model_name,
+                "aspect_ratio": aspect_ratio,
+                "reference_count": len(payload.get("image_urls", [])),
+                "prompt_preview": prompt[:160],
+            },
+        )
+
+        async with HttpClient.create_aiohttp() as session:
+            async with session.post(
+                self.base_url,
+                headers=self._build_headers(),
+                json=payload,
+            ) as response:
+                text = await response.text()
+
+            if response.status >= 400:
+                raise RuntimeError(
+                    "APIPod video request failed "
+                    f"status={response.status} body={text[:500]}"
+                )
+
+            try:
+                result = json.loads(text)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"APIPod video returned invalid JSON body={text[:500]}"
+                ) from exc
+
+        video_url = _extract_video_url(result)
+        if video_url:
+            return {
+                "status": "succeeded",
+                "provider_status": str((result.get("data") or {}).get("status", "")).lower() or "completed",
+                "progress": 100,
+                "provider_task_id": _extract_task_id(result),
+                "video_url": video_url,
+                "raw_result": result,
+            }
+
+        task_id = _extract_task_id(result)
+        if not task_id:
+            raise RuntimeError(
+                "APIPod video response missing video URL and task id"
+            )
+
+        normalized = self._normalize_task_status(result)
+        print(
+            "🎥 APIPod video task created",
+            {"task_id": task_id, "initial_status": normalized["provider_status"]},
+        )
+        return {
+            **normalized,
+            "provider_task_id": task_id,
+        }
+
+    async def poll_generation_task(self, task_id: str) -> dict[str, Any]:
         parsed = urlparse(self.base_url)
         origin = f"{parsed.scheme}://{parsed.netloc}"
         status_url = f"{origin}/v1/videos/status/{task_id}"
-        deadline = time.monotonic() + self.max_wait
-        last_status = ""
-        last_progress: int | None = None
 
         async with HttpClient.create_aiohttp() as session:
-            while time.monotonic() < deadline:
-                async with session.get(status_url, headers=self._build_headers()) as response:
-                    text = await response.text()
+            async with session.get(status_url, headers=self._build_headers()) as response:
+                text = await response.text()
 
-                if response.status >= 400:
-                    raise RuntimeError(
-                        "APIPod video status query failed "
-                        f"url={status_url} status={response.status} body={text[:500]}"
-                    )
+            if response.status >= 400:
+                raise RuntimeError(
+                    "APIPod video status query failed "
+                    f"url={status_url} status={response.status} body={text[:500]}"
+                )
 
-                try:
-                    result = json.loads(text)
-                except Exception as exc:
-                    raise RuntimeError(
-                        f"APIPod video status returned invalid JSON body={text[:500]}"
-                    ) from exc
+            try:
+                result = json.loads(text)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"APIPod video status returned invalid JSON body={text[:500]}"
+                ) from exc
 
-                task_data = result.get("data") or {}
-                status = str(task_data.get("status", "")).lower()
-                progress = task_data.get("progress")
-                if status != last_status or progress != last_progress:
-                    print(
-                        "🎥 APIPod video poll",
-                        {
-                            "task_id": task_id,
-                            "status": status,
-                            "progress": progress,
-                        },
-                    )
-                    last_status = status
-                    last_progress = progress
-                if status in {"completed", "succeeded", "success"}:
-                    return result
-                if status in {"failed", "error", "cancelled"}:
-                    error_message = (
-                        task_data.get("error")
-                        or task_data.get("error_message")
-                        or task_data.get("message")
-                        or "Unknown error"
-                    )
-                    raise RuntimeError(f"APIPod video task failed: {error_message}")
+        normalized = self._normalize_task_status(result)
+        print(
+            "🎥 APIPod video poll",
+            {
+                "task_id": task_id,
+                "status": normalized["provider_status"],
+                "progress": normalized["progress"],
+            },
+        )
+        return normalized
 
-                await asyncio.sleep(5)
+    async def wait_for_generation_task(self, task_id: str) -> dict[str, Any]:
+        deadline = asyncio.get_running_loop().time() + self.max_wait
+        while asyncio.get_running_loop().time() < deadline:
+            result = await self.poll_generation_task(task_id)
+            if result["status"] == "succeeded":
+                return result
+            if result["status"] == "failed":
+                raise RuntimeError(
+                    f"APIPod video task failed: {result.get('error_message') or 'Unknown error'}"
+                )
+            await asyncio.sleep(5)
 
         raise RuntimeError(
             f"APIPod video task timed out ({self.max_wait}s), task_id={task_id}"
@@ -396,60 +493,21 @@ class APIPodVideoProvider(VideoProviderBase, provider_name="apipodvideo"):
         **kwargs: Any,
     ) -> dict[str, Any]:
         try:
-            model_name = str(model or self.model_name).strip() or self.model_name
-            payload = await self._build_payload(
-                model_name=model_name,
+            created = await self.create_generation_task(
                 prompt=prompt,
+                model=model,
                 aspect_ratio=aspect_ratio,
                 input_images=input_images,
             )
-            print(
-                "🎥 APIPod video create request",
-                {
-                    "model_name": model_name,
-                    "aspect_ratio": aspect_ratio,
-                    "resolution": resolution,
-                    "duration": duration,
-                    "reference_count": len(payload.get("image_urls", [])),
-                    "prompt_preview": prompt[:160],
-                },
-            )
-
-            async with HttpClient.create_aiohttp() as session:
-                async with session.post(
-                    self.base_url,
-                    headers=self._build_headers(),
-                    json=payload,
-                ) as response:
-                    text = await response.text()
-
-                if response.status >= 400:
-                    raise RuntimeError(
-                        "APIPod video request failed "
-                        f"status={response.status} body={text[:500]}"
-                    )
-
-                try:
-                    result = json.loads(text)
-                except Exception as exc:
-                    raise RuntimeError(
-                        f"APIPod video returned invalid JSON body={text[:500]}"
-                    ) from exc
-
-            video_url = _extract_video_url(result)
+            video_url = str(created.get("video_url", "") or "")
             if not video_url:
-                task_id = _extract_task_id(result)
+                task_id = str(created.get("provider_task_id", "") or "")
                 if not task_id:
                     raise RuntimeError(
                         "APIPod video response missing video URL and task id"
                     )
-                print(
-                    "🎥 APIPod video task created",
-                    {"task_id": task_id, "initial_status": result.get("data", {}).get("status")},
-                )
-                result = await self._poll_task(task_id)
-                video_url = _extract_video_url(result)
-
+                waited = await self.wait_for_generation_task(task_id)
+                video_url = str(waited.get("video_url", "") or "")
             if not video_url:
                 raise RuntimeError("APIPod video completed without video URL")
             print("🎥 APIPod video completed", {"video_url": video_url})

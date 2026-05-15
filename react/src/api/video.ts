@@ -1,4 +1,4 @@
-import { Message, Model } from '@/types/types'
+import { GenerationJob, Message, Model } from '@/types/types'
 
 export const previewDirectVideoPrompt = async (payload: {
   canvasId: string
@@ -55,7 +55,7 @@ export const sendDirectVideoGenerate = async (payload: {
   endFrameFileId?: string
   skipPromptConfirmation?: boolean
   skipPromptCompilation?: boolean
-}) => {
+}): Promise<{ status: 'accepted'; job_id: string; job: GenerationJob }> => {
   const response = await fetch('/api/direct_video', {
     method: 'POST',
     headers: {
@@ -81,6 +81,44 @@ export const sendDirectVideoGenerate = async (payload: {
   })
   if (!response.ok) {
     throw new Error(`Direct video request failed: ${response.status}`)
+  }
+  return await response.json()
+}
+
+export const getGenerationJob = async (
+  jobId: string
+): Promise<{ job: GenerationJob | null }> => {
+  const response = await fetch(`/api/jobs/${jobId}`)
+  if (!response.ok) {
+    throw new Error(`Get generation job failed: ${response.status}`)
+  }
+  return await response.json()
+}
+
+export const listCanvasGenerationJobs = async (
+  canvasId: string,
+  params?: {
+    type?: string
+    status?: string
+    limit?: number
+  }
+): Promise<{ jobs: GenerationJob[] }> => {
+  const search = new URLSearchParams()
+  if (params?.type) {
+    search.set('type', params.type)
+  }
+  if (params?.status) {
+    search.set('status', params.status)
+  }
+  if (typeof params?.limit === 'number') {
+    search.set('limit', String(params.limit))
+  }
+  const query = search.toString()
+  const response = await fetch(
+    `/api/canvases/${canvasId}/jobs${query ? `?${query}` : ''}`
+  )
+  if (!response.ok) {
+    throw new Error(`List canvas generation jobs failed: ${response.status}`)
   }
   return await response.json()
 }

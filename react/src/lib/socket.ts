@@ -113,6 +113,21 @@ export class SocketIOManager {
     }
 
     switch (type) {
+      case ISocket.SessionEventType.JobQueued:
+        eventBus.emit('Socket::Session::JobQueued', data)
+        break
+      case ISocket.SessionEventType.JobRunning:
+        eventBus.emit('Socket::Session::JobRunning', data)
+        break
+      case ISocket.SessionEventType.JobProgress:
+        eventBus.emit('Socket::Session::JobProgress', data)
+        break
+      case ISocket.SessionEventType.JobSucceeded:
+        eventBus.emit('Socket::Session::JobSucceeded', data)
+        break
+      case ISocket.SessionEventType.JobFailed:
+        eventBus.emit('Socket::Session::JobFailed', data)
+        break
       case ISocket.SessionEventType.Delta:
         eventBus.emit('Socket::Session::Delta', data)
         break

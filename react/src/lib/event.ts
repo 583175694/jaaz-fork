@@ -74,6 +74,11 @@ export type TEvents = {
   'Socket::Session::Error': ISocket.SessionErrorEvent
   'Socket::Session::Done': ISocket.SessionDoneEvent
   'Socket::Session::Info': ISocket.SessionInfoEvent
+  'Socket::Session::JobQueued': ISocket.SessionJobQueuedEvent
+  'Socket::Session::JobRunning': ISocket.SessionJobRunningEvent
+  'Socket::Session::JobProgress': ISocket.SessionJobProgressEvent
+  'Socket::Session::JobSucceeded': ISocket.SessionJobSucceededEvent
+  'Socket::Session::JobFailed': ISocket.SessionJobFailedEvent
   'Socket::Session::ImageGenerated': ISocket.SessionImageGeneratedEvent
   'Socket::Session::VideoGenerated': ISocket.SessionVideoGeneratedEvent
   'Socket::Session::Delta': ISocket.SessionDeltaEvent
