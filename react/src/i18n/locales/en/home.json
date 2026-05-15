@@ -3,5 +3,8 @@
   "subtitle": "Turn your ideas directly into images and video.",
   "allProjects": "All Projects",
   "noCanvases": "No canvases yet",
-  "newCanvas": "Untitled"
+  "newCanvas": "Untitled",
+  "createBlankCanvas": "New Canvas",
+  "createBlankCanvasHint": "Open a blank canvas",
+  "createBlankCanvasDescription": "Enter canvas first, then generate storyboard"
 }

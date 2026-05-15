@@ -124,6 +124,7 @@ const ChatCanvasVideoGenerator: React.FC<ChatCanvasVideoGeneratorProps> = ({
           duration,
           aspectRatio: data.aspectRatio,
           resolution: data.resolution,
+          videoModel: data.videoModel,
           selectionMode: 'start_end_frames',
           startFrameFileId: startFrame.fileId,
           endFrameFileId: endFrame.fileId,

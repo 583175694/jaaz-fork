@@ -34,6 +34,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  DEFAULT_IMAGE_MODEL,
+  IMAGE_MODEL_OPTIONS,
+  ImageModelOption,
+} from '@/lib/imageModels'
 
 type ChatTextareaProps = {
   pending: boolean
@@ -72,6 +77,8 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
   const [isFocused, setIsFocused] = useState(false)
   const [selectedAspectRatio, setSelectedAspectRatio] = useState<string>('auto')
   const [quantity, setQuantity] = useState<number>(1)
+  const [selectedImageModel, setSelectedImageModel] =
+    useState<ImageModelOption>(DEFAULT_IMAGE_MODEL)
   const [showQuantitySlider, setShowQuantitySlider] = useState(false)
   const quantitySliderRef = useRef<HTMLDivElement>(null)
   const MAX_QUANTITY = 30
@@ -152,6 +159,9 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
     if (quantity !== 1) {
       additionalInfo += `<quantity>${quantity}</quantity>\n`
     }
+    if (selectedImageModel !== DEFAULT_IMAGE_MODEL) {
+      additionalInfo += `<image_model>${selectedImageModel}</image_model>\n`
+    }
 
     if (additionalInfo) {
       text_content = text_content + '\n\n' + additionalInfo
@@ -225,6 +235,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
 
     setImages([])
     setPrompt('')
+    setSelectedImageModel(DEFAULT_IMAGE_MODEL)
 
     onSendMessages(newMessage, {
       textModel: textModel,
@@ -240,6 +251,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
     messages,
     t,
     selectedAspectRatio,
+    selectedImageModel,
     quantity,
     images.length,
   ])
@@ -484,6 +496,37 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
                 >
                   <span>{ratio}</span>
                   {selectedAspectRatio === ratio && (
+                    <div className="size-2 rounded-full bg-primary" />
+                  )}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="flex items-center gap-1"
+                size={'sm'}
+              >
+                <span className="text-sm">
+                  {IMAGE_MODEL_OPTIONS.find(
+                    (option) => option.value === selectedImageModel
+                  )?.label || 'Image'}
+                </span>
+                <ChevronDown className="size-3 opacity-50" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-40">
+              {IMAGE_MODEL_OPTIONS.map((option) => (
+                <DropdownMenuItem
+                  key={option.value}
+                  onClick={() => setSelectedImageModel(option.value)}
+                  className="flex items-center justify-between"
+                >
+                  <span>{option.label}</span>
+                  {selectedImageModel === option.value && (
                     <div className="size-2 rounded-full bg-primary" />
                   )}
                 </DropdownMenuItem>

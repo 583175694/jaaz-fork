@@ -1,3 +1,4 @@
+import { ImageModelOption } from './imageModels'
 import * as ISocket from '@/types/socket'
 import mitt from 'mitt'
 
@@ -32,6 +33,7 @@ export type TCanvasGenerateVideoEvent = {
   duration: number
   aspectRatio: string
   resolution: string
+  videoModel: 'veo3-1-quality' | 'seedance-2.0-fast-i2v'
   selectionMode?: 'start_end_frames'
 }
 
@@ -42,6 +44,7 @@ export type TCanvasGenerateStoryboardEvent = {
   finalPrompt: string
   shotCount: number
   aspectRatio: string
+  imageModel: ImageModelOption
 }
 
 export type TCanvasGenerateMultiviewEvent = {
@@ -52,6 +55,7 @@ export type TCanvasGenerateMultiviewEvent = {
   elevation: number
   framing: 'close' | 'medium' | 'full' | 'wide'
   aspectRatio: string
+  imageModel: ImageModelOption
   previewOnly?: boolean
   replaceSource?: boolean
   mode?: 'multiview' | 'refinement'

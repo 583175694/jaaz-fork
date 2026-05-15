@@ -3,5 +3,8 @@
   "subtitle": "把你的想法直接变成图像与视频。",
   "allProjects": "所有项目",
   "noCanvases": "还没有画布",
-  "newCanvas": "未命名"
+  "newCanvas": "未命名",
+  "createBlankCanvas": "新建画布",
+  "createBlankCanvasHint": "直接进入空白画布",
+  "createBlankCanvasDescription": "先进入画布，再生成分镜图"
 }

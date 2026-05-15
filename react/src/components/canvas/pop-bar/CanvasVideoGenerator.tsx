@@ -25,20 +25,13 @@ import { memo, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 
+type VideoModelOption = 'veo3-1-quality' | 'seedance-2.0-fast-i2v'
+
 type CanvasVideoGeneratorProps = {
   selectedImages: TCanvasAddImagesToChatEvent
 }
 
 const MAX_REFERENCE_IMAGES = 2
-
-const getConfiguredVideoModel = async () => {
-  const response = await fetch('/api/config')
-  if (!response.ok) {
-    throw new Error(`Failed to load config: ${response.status}`)
-  }
-  const config = await response.json()
-  return String(config?.apipodvideo?.model_name || '')
-}
 
 const CanvasVideoGenerator = ({ selectedImages }: CanvasVideoGeneratorProps) => {
   const { t } = useTranslation()
@@ -52,6 +45,7 @@ const CanvasVideoGenerator = ({ selectedImages }: CanvasVideoGeneratorProps) => 
   const [duration, setDuration] = useState('6')
   const [aspectRatio, setAspectRatio] = useState('16:9')
   const [resolution, setResolution] = useState('1080p')
+  const [videoModel, setVideoModel] = useState<VideoModelOption>('veo3-1-quality')
   const [orderedImages, setOrderedImages] = useState<TCanvasAddImagesToChatEvent>([])
 
   const normalizedSelectedImages = useMemo(
@@ -73,6 +67,7 @@ const CanvasVideoGenerator = ({ selectedImages }: CanvasVideoGeneratorProps) => 
       setLastRawPrompt('')
       setShowAdvanced(false)
       setOrderedImages([])
+      setVideoModel('veo3-1-quality')
     }
   }
 
@@ -103,20 +98,14 @@ const CanvasVideoGenerator = ({ selectedImages }: CanvasVideoGeneratorProps) => 
       toast.info('Veo 3.1 最多使用 2 张参考图，当前仅取前 2 张')
     }
 
-    try {
-      const configuredModelName = await getConfiguredVideoModel()
-      if (
-        normalizedSelectedImages.length > 1 &&
-        configuredModelName &&
-        !['veo3-1-fast', 'veo3-1-quality'].includes(configuredModelName)
-      ) {
-        toast.error('当前视频模型不支持多图参考', {
-          description: '当前内置视频能力仅支持单图参考，请改为只选择 1 张图片后再生成。',
-        })
-        return
-      }
-    } catch (error) {
-      console.error('Failed to inspect video model config:', error)
+    if (
+      normalizedSelectedImages.length > 1 &&
+      !['veo3-1-fast', 'veo3-1-quality'].includes(videoModel)
+    ) {
+      toast.error('当前视频模型不支持多图参考', {
+        description: '当前内置视频能力仅支持单图参考，请改为只选择 1 张图片后再生成。',
+      })
+      return
     }
 
     const imagesForPrompt = orderedImages.length > 0 ? orderedImages : normalizedSelectedImages
@@ -133,6 +122,7 @@ const CanvasVideoGenerator = ({ selectedImages }: CanvasVideoGeneratorProps) => 
         duration: Number(duration),
         aspectRatio,
         resolution,
+        videoModel,
         selectionMode: 'start_end_frames',
         startFrameFileId: startFrame?.fileId,
         endFrameFileId: endFrame?.fileId,
@@ -160,13 +150,22 @@ const CanvasVideoGenerator = ({ selectedImages }: CanvasVideoGeneratorProps) => 
       return
     }
 
+    const imagesForVideo = orderedImages.length > 0 ? orderedImages : normalizedSelectedImages
+    if (imagesForVideo.length > 1 && !['veo3-1-fast', 'veo3-1-quality'].includes(videoModel)) {
+      toast.error('当前视频模型不支持多图参考', {
+        description: 'Seedance 2.0 当前仅支持单图参考，请改为只选择 1 张图片后再生成。',
+      })
+      return
+    }
+
     eventBus.emit('Canvas::GenerateVideo', {
-      selectedImages: orderedImages.length > 0 ? orderedImages : normalizedSelectedImages,
+      selectedImages: imagesForVideo,
       userPrompt: lastRawPrompt || trimmedPromptDraft,
       finalPrompt: trimmedPromptDraft,
       duration: Number(duration),
       aspectRatio,
       resolution,
+      videoModel,
       selectionMode: 'start_end_frames',
     })
 
@@ -288,7 +287,25 @@ const CanvasVideoGenerator = ({ selectedImages }: CanvasVideoGeneratorProps) => 
             </button>
 
             {showAdvanced && (
-              <div className='grid gap-4 border-t px-4 py-4 md:grid-cols-3'>
+              <div className='grid gap-4 border-t px-4 py-4 md:grid-cols-2 xl:grid-cols-4'>
+                <div className='space-y-2'>
+                  <div className='text-sm font-medium'>视频模型</div>
+                  <Select
+                    value={videoModel}
+                    onValueChange={(value) => {
+                      setVideoModel(value as VideoModelOption)
+                    }}
+                  >
+                    <SelectTrigger className='w-full'>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value='veo3-1-quality'>Veo 3.1</SelectItem>
+                      <SelectItem value='seedance-2.0-fast-i2v'>Seedance 2.0</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <div className='space-y-2'>
                   <div className='text-sm font-medium'>时长</div>
                   <Select

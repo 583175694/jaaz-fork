@@ -18,6 +18,10 @@ from services.stream_service import add_stream_task, get_stream_task, remove_str
 from services.websocket_service import send_to_websocket
 from services.tool_service import tool_service
 from tools.utils.image_generation_core import generate_image_with_provider
+from tools.image_providers.apipod_gpt_image_provider import (
+    get_apipod_image_model_name,
+    normalize_apipod_image_model_name,
+)
 
 
 class MainImageAnchor(TypedDict, total=False):
@@ -98,7 +102,7 @@ def _build_camera_state(
 REFERENCE_IMAGE_TOOL_MAPPING: Dict[str, Dict[str, str]] = {
     "generate_image_by_gpt_image_2_edit_apipod": {
         "provider": "apipodgptimage",
-        "model": "gpt-image-2-edit",
+        "model": get_apipod_image_model_name(),
     },
 }
 
@@ -122,6 +126,13 @@ def _normalize_reference_image_file_id(data: Dict[str, Any], key: str) -> str:
 def _normalize_aspect_ratio(data: Dict[str, Any]) -> str:
     value = str(data.get("aspect_ratio", "16:9") or "16:9").strip()
     return value or "16:9"
+
+
+def _normalize_image_model(data: Dict[str, Any]) -> str:
+    requested_model = str(data.get("image_model", "") or "").strip()
+    if requested_model:
+        return normalize_apipod_image_model_name(requested_model)
+    return get_apipod_image_model_name()
 
 
 def _normalize_shot_count(data: Dict[str, Any]) -> int:
@@ -168,12 +179,13 @@ def _normalize_skip_prompt_confirmation(data: Dict[str, Any]) -> bool:
     return bool(data.get("skip_prompt_confirmation", False))
 
 
-def _resolve_reference_tool(requested_tool_id: str) -> Dict[str, str]:
+def _resolve_reference_tool(requested_tool_id: str, image_model: str) -> Dict[str, str]:
     registered_tools = tool_service.get_all_tools()
     if requested_tool_id in registered_tools and requested_tool_id in REFERENCE_IMAGE_TOOL_MAPPING:
         return {
             "tool_id": requested_tool_id,
             **REFERENCE_IMAGE_TOOL_MAPPING[requested_tool_id],
+            "model": image_model,
         }
 
     for tool_id in ("generate_image_by_gpt_image_2_edit_apipod",):
@@ -181,10 +193,11 @@ def _resolve_reference_tool(requested_tool_id: str) -> Dict[str, str]:
             return {
                 "tool_id": tool_id,
                 **REFERENCE_IMAGE_TOOL_MAPPING[tool_id],
+                "model": image_model,
             }
 
     raise RuntimeError(
-        "No reference-image capable image tool is configured. Please enable the APIPod GPT Image tool."
+        "No reference-image capable image tool is configured. Please enable the APIPod Nano Banana tool."
     )
 
 
@@ -806,6 +819,7 @@ async def handle_direct_storyboard(data: Dict[str, Any]) -> None:
     main_image_file_id = _normalize_main_image_file_id(data)
     reference_image_file_id = _normalize_reference_image_file_id(data, "reference_image_file_id")
     aspect_ratio = _normalize_aspect_ratio(data)
+    image_model = _normalize_image_model(data)
     shot_count = _normalize_shot_count(data)
     variant_count = _normalize_variant_count(data)
     image_tool_id = _normalize_tool_id(data)
@@ -833,6 +847,7 @@ async def handle_direct_storyboard(data: Dict[str, Any]) -> None:
             main_image_file_id=main_image_file_id,
             reference_image_file_id=reference_image_file_id,
             aspect_ratio=aspect_ratio,
+            image_model=image_model,
             shot_count=shot_count,
             variant_count=variant_count,
             image_tool_id=image_tool_id,
@@ -855,6 +870,7 @@ async def _process_direct_storyboard(
     main_image_file_id: str,
     reference_image_file_id: str,
     aspect_ratio: str,
+    image_model: str,
     shot_count: int,
     variant_count: int,
     image_tool_id: str,
@@ -868,6 +884,7 @@ async def _process_direct_storyboard(
         main_image_file_id=main_image_file_id,
         reference_image_file_id=reference_image_file_id,
         aspect_ratio=aspect_ratio,
+        image_model=image_model,
         shot_count=shot_count,
         variant_count=variant_count,
         image_tool_id=image_tool_id,
@@ -884,6 +901,7 @@ async def create_direct_storyboard_response(
     main_image_file_id: str,
     reference_image_file_id: str,
     aspect_ratio: str,
+    image_model: str,
     shot_count: int,
     variant_count: int,
     image_tool_id: str,
@@ -892,7 +910,7 @@ async def create_direct_storyboard_response(
     canvas_data = await _load_canvas_context(canvas_id)
     file_info = _get_canvas_file(canvas_data, main_image_file_id)
     source_element = _get_canvas_image_element(canvas_data, main_image_file_id)
-    image_tool = _resolve_reference_tool(image_tool_id)
+    image_tool = _resolve_reference_tool(image_tool_id, image_model)
     reference_file_id = reference_image_file_id or main_image_file_id
     anchor = _build_main_image_anchor(main_image_file_id, file_info)
     continuity = _build_continuity_bible(anchor)
@@ -1085,6 +1103,7 @@ async def handle_direct_multiview(data: Dict[str, Any]) -> None:
     reference_image_file_id = _normalize_reference_image_file_id(data, "reference_image_file_id")
     image_tool_id = _normalize_tool_id(data)
     aspect_ratio = _normalize_aspect_ratio(data)
+    image_model = _normalize_image_model(data)
     preview_only = _normalize_preview_only(data)
     replace_source = _normalize_replace_source(data)
 
@@ -1111,6 +1130,7 @@ async def handle_direct_multiview(data: Dict[str, Any]) -> None:
             prompt=_normalize_prompt(data),
             image_tool_id=image_tool_id,
             aspect_ratio=aspect_ratio,
+            image_model=image_model,
             preview_only=preview_only,
             replace_source=replace_source,
             preset_name=_normalize_preset_name(data.get("preset_name")),
@@ -1136,6 +1156,7 @@ async def _process_direct_multiview(
     prompt: str,
     image_tool_id: str,
     aspect_ratio: str,
+    image_model: str,
     preview_only: bool,
     replace_source: bool,
     preset_name: str,
@@ -1152,6 +1173,7 @@ async def _process_direct_multiview(
         prompt=prompt,
         image_tool_id=image_tool_id,
         aspect_ratio=aspect_ratio,
+        image_model=image_model,
         preview_only=preview_only,
         replace_source=replace_source,
         preset_name=preset_name,
@@ -1171,6 +1193,7 @@ async def create_direct_multiview_response(
     prompt: str,
     image_tool_id: str,
     aspect_ratio: str,
+    image_model: str,
     preview_only: bool,
     replace_source: bool,
     preset_name: str,
@@ -1183,7 +1206,7 @@ async def create_direct_multiview_response(
     source_element = _get_canvas_image_element(canvas_data, source_file_id)
     source_meta = _extract_existing_storyboard_meta(file_info)
     continuity_asset = await get_current_continuity_asset(canvas_id)
-    image_tool = _resolve_reference_tool(image_tool_id)
+    image_tool = _resolve_reference_tool(image_tool_id, image_model)
     reference_file_id = reference_image_file_id or source_file_id
     existing_file_ids = (
         set(canvas_data.get("files", {}).keys())
@@ -1341,6 +1364,7 @@ async def handle_direct_storyboard_refine(data: Dict[str, Any]) -> None:
     reference_image_file_id = _normalize_reference_image_file_id(data, "reference_image_file_id")
     image_tool_id = _normalize_tool_id(data)
     aspect_ratio = _normalize_aspect_ratio(data)
+    image_model = _normalize_image_model(data)
     mode = _normalize_mode(data, "append")
 
     if not session_id or not canvas_id or not source_file_id:
@@ -1366,6 +1390,7 @@ async def handle_direct_storyboard_refine(data: Dict[str, Any]) -> None:
             prompt=_normalize_prompt(data),
             image_tool_id=image_tool_id,
             aspect_ratio=aspect_ratio,
+            image_model=image_model,
             mode=mode,
             messages=messages,
         )
@@ -1386,6 +1411,7 @@ async def _process_direct_storyboard_refine(
     prompt: str,
     image_tool_id: str,
     aspect_ratio: str,
+    image_model: str,
     mode: str,
     messages: List[Dict[str, Any]],
 ) -> None:
@@ -1397,6 +1423,7 @@ async def _process_direct_storyboard_refine(
         prompt=prompt,
         image_tool_id=image_tool_id,
         aspect_ratio=aspect_ratio,
+        image_model=image_model,
         mode=mode,
     )
     await db_service.create_message(session_id, "assistant", json.dumps(response))
@@ -1411,6 +1438,7 @@ async def create_direct_storyboard_refine_response(
     prompt: str,
     image_tool_id: str,
     aspect_ratio: str,
+    image_model: str,
     mode: str,
 ) -> Dict[str, Any]:
     canvas_data = await _load_canvas_context(canvas_id)
@@ -1418,7 +1446,7 @@ async def create_direct_storyboard_refine_response(
     source_element = _get_canvas_image_element(canvas_data, source_file_id)
     source_meta = _extract_existing_storyboard_meta(file_info)
     continuity_asset = await get_current_continuity_asset(canvas_id)
-    image_tool = _resolve_reference_tool(image_tool_id)
+    image_tool = _resolve_reference_tool(image_tool_id, image_model)
     reference_file_id = reference_image_file_id or source_file_id
     existing_file_ids = (
         set(canvas_data.get("files", {}).keys())

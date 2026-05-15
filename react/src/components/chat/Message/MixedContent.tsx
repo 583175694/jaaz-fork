@@ -16,6 +16,9 @@ type MixedContentTextProps = {
   contents: MessageContent[]
 }
 
+type TextMessageContent = Extract<MessageContent, { type: 'text' }>
+type ImageMessageContent = Extract<MessageContent, { type: 'image_url' }>
+
 const INTERNAL_BLOCK_PATTERNS = [
   /<input_images\b[^>]*>[\s\S]*?<\/input_images>/gi,
   /<video_generation_intent>[\s\S]*?<\/video_generation_intent>/gi,
@@ -24,6 +27,7 @@ const INTERNAL_BLOCK_PATTERNS = [
 const INTERNAL_INLINE_PATTERNS = [
   /<aspect_ratio>[\s\S]*?<\/aspect_ratio>/gi,
   /<quantity>[\s\S]*?<\/quantity>/gi,
+  /<image_model>[\s\S]*?<\/image_model>/gi,
   /<selection_mode>[\s\S]*?<\/selection_mode>/gi,
   /<task>[\s\S]*?<\/task>/gi,
   /<preset_name>[\s\S]*?<\/preset_name>/gi,
@@ -85,16 +89,18 @@ const getNormalizedImageKeyFromUrl = (url: string) => {
   return normalized
 }
 
-const getNormalizedImageKeyFromContent = (content: MessageContent) => {
-  if (content.type !== 'image_url') {
-    return ''
-  }
+const isTextContent = (content: MessageContent): content is TextMessageContent =>
+  content.type === 'text'
 
+const isImageContent = (content: MessageContent): content is ImageMessageContent =>
+  content.type === 'image_url'
+
+const getNormalizedImageKeyFromContent = (content: ImageMessageContent) => {
   return getNormalizedImageKeyFromUrl(content.image_url.url)
 }
 
-const extractInlineImagesFromText = (text: string): MessageContent[] => {
-  const images: MessageContent[] = []
+const extractInlineImagesFromText = (text: string): ImageMessageContent[] => {
+  const images: ImageMessageContent[] = []
   const seenUrls = new Set<string>()
   const tags = text.match(/<(image|source_image|start_frame|end_frame)\b[^>]*\/>/gi) || []
 
@@ -146,18 +152,15 @@ const sanitizeVisibleText = (text: string) => {
 
 // 图片组件 - 独立显示在聊天框外
 export const MixedContentImages: React.FC<MixedContentImagesProps> = ({ contents }) => {
-  const textContents = contents.filter((content) => content.type === 'text')
-  const explicitImages = contents.filter(
-    (content): content is Extract<MessageContent, { type: 'image_url' }> =>
-      content.type === 'image_url'
-  )
-  const inlineImages =
+  const textContents = contents.filter(isTextContent)
+  const explicitImages = contents.filter(isImageContent)
+  const inlineImages: ImageMessageContent[] =
     explicitImages.length > 0
       ? []
       : textContents.flatMap((content) => extractInlineImagesFromText(content.text))
 
   const seenImageKeys = new Set<string>()
-  const images = [...explicitImages, ...inlineImages].filter((content) => {
+  const images: ImageMessageContent[] = [...explicitImages, ...inlineImages].filter((content) => {
     const key = getNormalizedImageKeyFromContent(content)
     const url = String(content.image_url.url || '').trim()
     if (!url) {
@@ -196,7 +199,7 @@ export const MixedContentImages: React.FC<MixedContentImagesProps> = ({ contents
 
 // 文本组件 - 显示在聊天框内
 export const MixedContentText: React.FC<MixedContentTextProps> = ({ message, contents }) => {
-  const textContents = contents.filter((content) => content.type === 'text')
+  const textContents = contents.filter(isTextContent)
 
   const combinedText = textContents
     .map((content) => content.text)

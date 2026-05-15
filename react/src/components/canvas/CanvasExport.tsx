@@ -143,13 +143,13 @@ const CanvasExport = () => {
   }
 
   return (
-    <div className="inline-flex -space-x-px rounded-md shadow-xs rtl:space-x-reverse">
+    <div className="inline-flex rtl:space-x-reverse">
       <Button
-        className="rounded-none shadow-none first:rounded-s-md last:rounded-e-md h-8"
+        className="h-10 rounded-xl border-border/70 bg-background px-4 shadow-none hover:bg-accent/80"
         variant="outline"
         onClick={handleExportImages}
       >
-        <ImageDown />
+        <ImageDown className="size-4.5" />
         {t('canvas:exportImages')}
       </Button>
     </div>

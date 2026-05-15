@@ -1,4 +1,5 @@
 import { Message } from '@/types/types'
+import { ImageModelOption } from '@/lib/imageModels'
 
 export const sendDirectStoryboardGenerate = async (payload: {
   sessionId: string
@@ -10,6 +11,7 @@ export const sendDirectStoryboardGenerate = async (payload: {
   shotCount: number
   aspectRatio: string
   imageToolId?: string
+  imageModel?: ImageModelOption
   skipPromptConfirmation?: boolean
 }) => {
   const response = await fetch('/api/direct_storyboard', {
@@ -27,6 +29,7 @@ export const sendDirectStoryboardGenerate = async (payload: {
       shot_count: payload.shotCount,
       aspect_ratio: payload.aspectRatio,
       image_tool_id: payload.imageToolId,
+      image_model: payload.imageModel,
       skip_prompt_confirmation: payload.skipPromptConfirmation,
     }),
   })
@@ -48,6 +51,7 @@ export const sendDirectMultiviewGenerate = async (payload: {
   elevation: number
   framing: 'close' | 'medium' | 'full' | 'wide'
   aspectRatio: string
+  imageModel?: ImageModelOption
   previewOnly?: boolean
   replaceSource?: boolean
   imageToolId?: string
@@ -69,6 +73,7 @@ export const sendDirectMultiviewGenerate = async (payload: {
       elevation: payload.elevation,
       framing: payload.framing,
       aspect_ratio: payload.aspectRatio,
+      image_model: payload.imageModel,
       preview_only: payload.previewOnly,
       replace_source: payload.replaceSource,
       image_tool_id: payload.imageToolId,
@@ -90,6 +95,7 @@ export const sendDirectStoryboardRefine = async (payload: {
   aspectRatio: string
   mode?: 'append' | 'replace'
   imageToolId?: string
+  imageModel?: ImageModelOption
 }) => {
   const response = await fetch('/api/storyboard/refine', {
     method: 'POST',
@@ -106,6 +112,7 @@ export const sendDirectStoryboardRefine = async (payload: {
       aspect_ratio: payload.aspectRatio,
       mode: payload.mode,
       image_tool_id: payload.imageToolId,
+      image_model: payload.imageModel,
     }),
   })
   if (!response.ok) {

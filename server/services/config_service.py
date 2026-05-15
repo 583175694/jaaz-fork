@@ -40,7 +40,9 @@ DEFAULT_PROVIDERS_CONFIG: AppConfig = {
     },
     'apipodvideo': {
         'models': {
+            'veo3-1-fast': {'type': 'video'},
             'veo3-1-quality': {'type': 'video'},
+            'seedance-2.0-fast-i2v': {'type': 'video'},
         },
         'url': 'https://api.apipod.ai/v1/videos/generations',
         'api_key': '',
@@ -50,10 +52,13 @@ DEFAULT_PROVIDERS_CONFIG: AppConfig = {
         'download_retry_delay_seconds': 2,
     },
     'apipodgptimage': {
-        'models': {},
+        'models': {
+            'gpt-image-2': {'type': 'image'},
+            'nano-banana-pro': {'type': 'image'},
+        },
         'url': 'https://api.apipod.ai/v1/images/generations',
         'api_key': '',
-        'model_name': 'gpt-image-2',
+        'model_name': 'nano-banana-pro',
         'max_tokens': 8192,
     },
 }
@@ -167,16 +172,10 @@ class ConfigService:
                 "download_retry_attempts",
                 "download_retry_delay_seconds",
                 "max_wait_seconds",
+                "model_name",
             ):
                 if field in provider_data and provider_data[field] not in (None, ""):
                     merged[field] = provider_data[field]
-
-            if provider_name == "apipodvideo":
-                merged["model_name"] = "veo3-1-quality"
-            elif provider_name == "apipodgptimage":
-                merged["model_name"] = "gpt-image-2"
-            else:
-                merged["models"] = copy.deepcopy(provider_defaults.get("models", {}))
 
             merged["models"] = copy.deepcopy(provider_defaults.get("models", {}))
             sanitized[provider_name] = merged

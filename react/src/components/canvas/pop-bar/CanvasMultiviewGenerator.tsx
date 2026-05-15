@@ -13,9 +13,17 @@ import { Textarea } from '@/components/ui/textarea'
 import { useCanvas } from '@/contexts/canvas'
 import { cn } from '@/lib/utils'
 import { eventBus, TCanvasAddImagesToChatEvent } from '@/lib/event'
+import { DEFAULT_IMAGE_MODEL, IMAGE_MODEL_OPTIONS, ImageModelOption } from '@/lib/imageModels'
 import { Camera, RotateCcw } from 'lucide-react'
 import { memo, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 type CanvasMultiviewGeneratorProps = {
   selectedImages: TCanvasAddImagesToChatEvent
@@ -107,6 +115,8 @@ const CanvasMultiviewGenerator = ({
     'medium'
   )
   const [aspectRatio, setAspectRatio] = useState('16:9')
+  const [imageModel, setImageModel] =
+    useState<ImageModelOption>(DEFAULT_IMAGE_MODEL)
   const [previewCards, setPreviewCards] = useState<PreviewCard[]>([])
   const [previewRefreshToken, setPreviewRefreshToken] = useState(0)
 
@@ -131,6 +141,7 @@ const CanvasMultiviewGenerator = ({
     setPrompt('')
     setRefinePrompt('')
     setAspectRatio('16:9')
+    setImageModel(DEFAULT_IMAGE_MODEL)
   }
 
   const handleGenerateMultiview = (options?: {
@@ -152,6 +163,7 @@ const CanvasMultiviewGenerator = ({
       elevation,
       framing,
       aspectRatio,
+      imageModel,
       previewOnly: options?.previewOnly ?? false,
       replaceSource: options?.replaceSource ?? false,
       mode: options?.mode ?? 'multiview',
@@ -483,6 +495,27 @@ const CanvasMultiviewGenerator = ({
                       </Button>
                     ))}
                   </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">图片模型</div>
+                  <Select
+                    value={imageModel}
+                    onValueChange={(value) =>
+                      setImageModel(value as ImageModelOption)
+                    }
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {IMAGE_MODEL_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
             </div>

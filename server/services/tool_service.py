@@ -11,13 +11,13 @@ from services.config_service import config_service
 
 TOOL_MAPPING: Dict[str, ToolInfo] = {
     "generate_image_by_gpt_image_2_edit_apipod": {
-        "display_name": "GPT Image 2 Edit",
+        "display_name": "APIPod Images",
         "type": "image",
         "provider": "apipodgptimage",
         "tool_function": generate_image_by_gpt_image_2_edit_apipod,
     },
     "generate_video_by_veo3_apipod": {
-        "display_name": "Google Veo 3.1",
+        "display_name": "APIPod Video",
         "type": "video",
         "provider": "apipodvideo",
         "tool_function": generate_video_by_veo3_apipod,

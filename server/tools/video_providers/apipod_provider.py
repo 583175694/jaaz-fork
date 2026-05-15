@@ -20,22 +20,35 @@ from .video_base_provider import VideoProviderBase
 
 APIPOD_VIDEO_DEFAULT_MODEL_NAME = "veo3-1-quality"
 APIPOD_VIDEO_REFERENCE_IMAGES_MAX = 2
+APIPOD_VIDEO_SUPPORTED_MODELS = {
+    "veo3-1-fast",
+    "veo3-1-quality",
+    "seedance-2.0-fast-i2v",
+}
 
 
 def get_apipod_video_model_name() -> str:
     config = config_service.app_config.get("apipodvideo", {})
-    return str(
+    model_name = str(
         config.get("model_name", APIPOD_VIDEO_DEFAULT_MODEL_NAME)
     ).strip() or APIPOD_VIDEO_DEFAULT_MODEL_NAME
+    return normalize_apipod_video_model_name(model_name)
+
+
+def normalize_apipod_video_model_name(model_name: str | None) -> str:
+    normalized = str(model_name or "").strip().lower()
+    if normalized in APIPOD_VIDEO_SUPPORTED_MODELS:
+        return normalized
+    return APIPOD_VIDEO_DEFAULT_MODEL_NAME
 
 
 def apipod_video_supports_multi_reference_images(model_name: str) -> bool:
-    normalized = str(model_name or "").strip().lower()
+    normalized = normalize_apipod_video_model_name(model_name)
     return normalized in {"veo3-1-fast", "veo3-1-quality"}
 
 
 def format_apipod_multi_reference_images_not_supported_error(model_name: str) -> str:
-    normalized = str(model_name or "").strip() or APIPOD_VIDEO_DEFAULT_MODEL_NAME
+    normalized = normalize_apipod_video_model_name(model_name)
     return (
         f"当前内置视频能力 `{normalized}` 不支持多张参考图。"
         "请改为只选择 1 张图片后再生成视频。"

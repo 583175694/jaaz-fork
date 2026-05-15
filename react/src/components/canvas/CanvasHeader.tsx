@@ -11,7 +11,6 @@ type CanvasHeaderProps = {
 
 const CanvasHeader: React.FC<CanvasHeaderProps> = ({
   canvasName,
-  canvasId,
   onNameChange,
   onNameSave,
 }) => {
@@ -19,7 +18,7 @@ const CanvasHeader: React.FC<CanvasHeaderProps> = ({
     <TopMenu
       middle={
         <Input
-          className="text-sm text-muted-foreground text-center bg-transparent border-none shadow-none w-fit h-7 hover:bg-primary-foreground transition-all"
+          className="h-10 min-w-[12rem] w-full max-w-md rounded-xl border border-transparent bg-foreground/[0.03] px-4 text-center text-sm font-medium text-foreground shadow-none transition-all hover:border-border/70 hover:bg-background focus-visible:border-ring"
           value={canvasName}
           onChange={(e) => onNameChange(e.target.value)}
           onBlur={onNameSave}

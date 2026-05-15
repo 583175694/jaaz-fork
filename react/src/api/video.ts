@@ -8,6 +8,7 @@ export const previewDirectVideoPrompt = async (payload: {
   duration: number
   aspectRatio: string
   resolution: string
+  videoModel?: 'veo3-1-quality' | 'seedance-2.0-fast-i2v'
   selectionMode?: 'start_end_frames'
   startFrameFileId?: string
   endFrameFileId?: string
@@ -25,6 +26,7 @@ export const previewDirectVideoPrompt = async (payload: {
       duration: payload.duration,
       aspect_ratio: payload.aspectRatio,
       resolution: payload.resolution,
+      video_model: payload.videoModel,
       selection_mode: payload.selectionMode,
       start_frame_file_id: payload.startFrameFileId,
       end_frame_file_id: payload.endFrameFileId,
@@ -47,6 +49,7 @@ export const sendDirectVideoGenerate = async (payload: {
   duration: number
   aspectRatio: string
   resolution: string
+  videoModel?: 'veo3-1-quality' | 'seedance-2.0-fast-i2v'
   selectionMode?: 'start_end_frames'
   startFrameFileId?: string
   endFrameFileId?: string
@@ -68,6 +71,7 @@ export const sendDirectVideoGenerate = async (payload: {
       duration: payload.duration,
       aspect_ratio: payload.aspectRatio,
       resolution: payload.resolution,
+      video_model: payload.videoModel,
       selection_mode: payload.selectionMode,
       start_frame_file_id: payload.startFrameFileId,
       end_frame_file_id: payload.endFrameFileId,

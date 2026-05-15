@@ -18,6 +18,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { useCanvas } from '@/contexts/canvas'
 import { eventBus, TCanvasAddImagesToChatEvent } from '@/lib/event'
+import { DEFAULT_IMAGE_MODEL, IMAGE_MODEL_OPTIONS, ImageModelOption } from '@/lib/imageModels'
 import { Check, Sparkles } from 'lucide-react'
 import { memo, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -57,6 +58,8 @@ const CanvasStoryboardGenerator = ({
   const [step, setStep] = useState<'form' | 'confirm'>('form')
   const [shotCount, setShotCount] = useState('4')
   const [aspectRatio, setAspectRatio] = useState('16:9')
+  const [imageModel, setImageModel] =
+    useState<ImageModelOption>(DEFAULT_IMAGE_MODEL)
 
   const selectedImage = selectedImages[0]
   const previewUrl = useMemo(
@@ -69,6 +72,7 @@ const CanvasStoryboardGenerator = ({
     if (!nextOpen) {
       setStep('form')
       setFinalPrompt('')
+      setImageModel(DEFAULT_IMAGE_MODEL)
     }
   }
 
@@ -108,6 +112,7 @@ const CanvasStoryboardGenerator = ({
       finalPrompt: trimmedFinalPrompt,
       shotCount: Number(shotCount),
       aspectRatio,
+      imageModel,
     })
 
     setOpen(false)
@@ -189,6 +194,27 @@ const CanvasStoryboardGenerator = ({
                         <SelectItem value="9:16">9:16</SelectItem>
                         <SelectItem value="1:1">1:1</SelectItem>
                         <SelectItem value="4:5">4:5</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium">图片模型</div>
+                    <Select
+                      value={imageModel}
+                      onValueChange={(value) =>
+                        setImageModel(value as ImageModelOption)
+                      }
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {IMAGE_MODEL_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>

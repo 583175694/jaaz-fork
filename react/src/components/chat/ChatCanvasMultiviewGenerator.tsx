@@ -98,6 +98,7 @@ const ChatCanvasMultiviewGenerator: React.FC<
             aspectRatio: data.aspectRatio,
             mode: data.replaceSource ? 'replace' : 'append',
             imageToolId,
+            imageModel: data.imageModel,
           })
         } else {
           await sendDirectMultiviewGenerate({
@@ -112,6 +113,7 @@ const ChatCanvasMultiviewGenerator: React.FC<
             elevation: data.elevation,
             framing: data.framing,
             aspectRatio: data.aspectRatio,
+            imageModel: data.imageModel,
             previewOnly: data.previewOnly,
             replaceSource: data.replaceSource,
             imageToolId,

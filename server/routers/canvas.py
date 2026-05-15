@@ -125,13 +125,14 @@ async def create_canvas(request: Request):
     id = data.get('canvas_id')
     name = data.get('name')
     session_id = data.get('session_id')
+    messages = data.get("messages", []) or []
     print(
         "🖼️ /api/canvas/create",
         {
             "canvas_id": id,
             "session_id": session_id,
             "name": name,
-            "message_count": len(data.get("messages", []) or []),
+            "message_count": len(messages),
         },
     )
 
@@ -143,21 +144,31 @@ async def create_canvas(request: Request):
             "session_id": session_id,
         },
     )
-    task = asyncio.create_task(handle_chat(data))
-    task.add_done_callback(
-        lambda completed_task: _log_background_task_result(
-            completed_task,
-            canvas_id=id,
-            session_id=session_id,
+
+    if messages:
+        task = asyncio.create_task(handle_chat(data))
+        task.add_done_callback(
+            lambda completed_task: _log_background_task_result(
+                completed_task,
+                canvas_id=id,
+                session_id=session_id,
+            )
         )
-    )
-    print(
-        "🖼️ handle_chat task scheduled",
-        {
-            "canvas_id": id,
-            "session_id": session_id,
-        },
-    )
+        print(
+            "🖼️ handle_chat task scheduled",
+            {
+                "canvas_id": id,
+                "session_id": session_id,
+            },
+        )
+    else:
+        print(
+            "🖼️ blank canvas created without initial chat",
+            {
+                "canvas_id": id,
+                "session_id": session_id,
+            },
+        )
     return {"id": id }
 
 @router.get("/{id}")

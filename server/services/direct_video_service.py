@@ -25,11 +25,11 @@ from tools.video_providers.apipod_provider import (
     apipod_video_supports_multi_reference_images,
     format_apipod_multi_reference_images_not_supported_error,
     get_apipod_video_model_name,
+    normalize_apipod_video_model_name,
 )
 
 
-def _build_model_info() -> Dict[str, List[ModelInfo]]:
-    model_name = get_apipod_video_model_name()
+def _build_model_info(model_name: str) -> Dict[str, List[ModelInfo]]:
     return {
         model_name: [
             {
@@ -80,6 +80,13 @@ def _normalize_skip_prompt_compilation(data: Dict[str, Any]) -> bool:
     return bool(data.get("skip_prompt_compilation", False))
 
 
+def _normalize_video_model(data: Dict[str, Any]) -> str:
+    requested_model = str(data.get("video_model", "") or "").strip()
+    if requested_model:
+        return normalize_apipod_video_model_name(requested_model)
+    return get_apipod_video_model_name()
+
+
 def _resolve_ordered_reference_file_ids(
     file_ids: List[str],
     selection_mode: str,
@@ -123,6 +130,7 @@ async def _compile_direct_video_prompt(
     aspect_ratio: str,
     resolution: str,
     text_model: Optional[ModelInfo],
+    video_model: str,
 ) -> Dict[str, Any]:
     selection = await _resolve_storyboard_video_selection(
         canvas_id=canvas_id,
@@ -148,10 +156,9 @@ async def _compile_direct_video_prompt(
             "当前选中的分镜主版本存在多个 continuity 版本，暂不能直接生成视频。请先统一分镜版本。"
         )
 
-    model_name = get_apipod_video_model_name()
-    if len(file_ids) > 1 and not apipod_video_supports_multi_reference_images(model_name):
+    if len(file_ids) > 1 and not apipod_video_supports_multi_reference_images(video_model):
         raise RuntimeError(
-            format_apipod_multi_reference_images_not_supported_error(model_name)
+            format_apipod_multi_reference_images_not_supported_error(video_model)
         )
 
     compiled = await compile_ad_video_prompt(
@@ -296,6 +303,7 @@ async def handle_direct_video(data: Dict[str, Any]) -> None:
     text_model = _normalize_text_model(data)
     prompt: str = str(data.get("prompt", "") or "")
     file_ids = _normalize_file_ids(data)
+    video_model = _normalize_video_model(data)
     selection_mode = _normalize_selection_mode(data)
     start_frame_file_id = _normalize_frame_file_id(data, "start_frame_file_id")
     end_frame_file_id = _normalize_frame_file_id(data, "end_frame_file_id")
@@ -304,7 +312,6 @@ async def handle_direct_video(data: Dict[str, Any]) -> None:
     resolution: str = str(data.get("resolution", "1080p") or "1080p")
     skip_prompt_confirmation = _normalize_skip_prompt_confirmation(data)
     skip_prompt_compilation = _normalize_skip_prompt_compilation(data)
-    model_name = get_apipod_video_model_name()
     print(
         "🎬 direct_video request",
         {
@@ -315,7 +322,7 @@ async def handle_direct_video(data: Dict[str, Any]) -> None:
                 if text_model
                 else ""
             ),
-            "model_name": model_name,
+            "model_name": video_model,
             "file_ids": file_ids,
             "duration": duration,
             "aspect_ratio": aspect_ratio,
@@ -363,7 +370,7 @@ async def handle_direct_video(data: Dict[str, Any]) -> None:
     if not any(session.get("id") == session_id for session in existing_sessions):
         await db_service.create_chat_session(
             session_id,
-            text_model.get("model") if text_model else model_name,
+            text_model.get("model") if text_model else video_model,
             text_model.get("provider") if text_model else "apipodvideo",
             canvas_id,
             (prompt[:200] if prompt else "Generate Video"),
@@ -388,6 +395,7 @@ async def handle_direct_video(data: Dict[str, Any]) -> None:
             aspect_ratio=aspect_ratio,
             resolution=resolution,
             text_model=text_model,
+            video_model=video_model,
             skip_prompt_confirmation=skip_prompt_confirmation,
             skip_prompt_compilation=skip_prompt_compilation,
         )
@@ -424,6 +432,7 @@ async def preview_direct_video_prompt(data: Dict[str, Any]) -> Dict[str, Any]:
         raise RuntimeError("canvas_id is required")
 
     text_model = _normalize_text_model(data)
+    video_model = _normalize_video_model(data)
     prompt: str = str(data.get("prompt", "") or "")
     file_ids = _normalize_file_ids(data)
     selection_mode = _normalize_selection_mode(data)
@@ -449,6 +458,7 @@ async def preview_direct_video_prompt(data: Dict[str, Any]) -> Dict[str, Any]:
         aspect_ratio=aspect_ratio,
         resolution=resolution,
         text_model=text_model,
+        video_model=video_model,
     )
 
     compiled = result["compiled"]
@@ -463,6 +473,7 @@ async def preview_direct_video_prompt(data: Dict[str, Any]) -> Dict[str, Any]:
         "selected_frame_storyboard_meta": compiled.get(
             "selected_frame_storyboard_meta", {}
         ),
+        "video_model": video_model,
     }
 
 
@@ -479,6 +490,7 @@ async def _process_direct_video_generation(
     aspect_ratio: str,
     resolution: str,
     text_model: Optional[ModelInfo],
+    video_model: str,
     skip_prompt_confirmation: bool,
     skip_prompt_compilation: bool,
 ) -> None:
@@ -495,6 +507,7 @@ async def _process_direct_video_generation(
         aspect_ratio=aspect_ratio,
         resolution=resolution,
         text_model=text_model,
+        video_model=video_model,
         skip_prompt_confirmation=skip_prompt_confirmation,
         skip_prompt_compilation=skip_prompt_compilation,
     )
@@ -519,6 +532,7 @@ async def create_direct_video_response(
     aspect_ratio: str,
     resolution: str,
     text_model: Optional[ModelInfo],
+    video_model: str,
     skip_prompt_confirmation: bool,
     skip_prompt_compilation: bool,
 ) -> Dict[str, Any]:
@@ -548,10 +562,9 @@ async def create_direct_video_response(
                     "当前选中的分镜主版本存在多个 continuity 版本，暂不能直接生成视频。请先统一分镜版本。"
                 )
 
-            model_name = get_apipod_video_model_name()
-            if len(file_ids) > 1 and not apipod_video_supports_multi_reference_images(model_name):
+            if len(file_ids) > 1 and not apipod_video_supports_multi_reference_images(video_model):
                 raise RuntimeError(
-                    format_apipod_multi_reference_images_not_supported_error(model_name)
+                    format_apipod_multi_reference_images_not_supported_error(video_model)
                 )
 
             compiled_video_prompt = str(prompt or "").strip()
@@ -600,6 +613,7 @@ async def create_direct_video_response(
                 aspect_ratio=aspect_ratio,
                 resolution=resolution,
                 text_model=text_model,
+                video_model=video_model,
             )
         selection = compile_result["selection"]
         reference_file_ids = compile_result["reference_file_ids"]
@@ -608,7 +622,6 @@ async def create_direct_video_response(
         compiled_video_prompt = compile_result["compiled_video_prompt"]
         start_frame_file_id = compile_result["start_frame_file_id"]
         end_frame_file_id = compile_result["end_frame_file_id"]
-        model_name = get_apipod_video_model_name()
         brief = compiled["brief"]
         print(
             "🎬 direct_video compiled brief",
@@ -720,13 +733,13 @@ async def create_direct_video_response(
             resolution=resolution,
             duration=duration,
             aspect_ratio=aspect_ratio,
-            model=model_name,
+            model=video_model,
             tool_call_id=f"call_direct_video_{generate(size=8)}",
             config={
                 "configurable": {
                     "canvas_id": canvas_id,
                     "session_id": session_id,
-                    "model_info": _build_model_info(),
+                    "model_info": _build_model_info(video_model),
                 }
             },
             input_images=normalized_input_images,

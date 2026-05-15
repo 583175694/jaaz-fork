@@ -55,7 +55,7 @@ def sanitize_tool_list(tool_list: list[Dict[str, Any]] | list[ToolInfoJson] | No
             {
                 "id": DEFAULT_IMAGE_TOOL_ID,
                 "provider": "apipodgptimage",
-                "display_name": "GPT Image 2 Edit",
+                "display_name": "APIPod Images",
                 "type": "image",
             },
         ),
@@ -64,7 +64,7 @@ def sanitize_tool_list(tool_list: list[Dict[str, Any]] | list[ToolInfoJson] | No
             {
                 "id": DEFAULT_VIDEO_TOOL_ID,
                 "provider": "apipodvideo",
-                "display_name": "Google Veo 3.1",
+                "display_name": "APIPod Video",
                 "type": "video",
             },
         ),

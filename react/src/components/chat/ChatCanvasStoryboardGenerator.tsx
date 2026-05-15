@@ -107,6 +107,7 @@ const ChatCanvasStoryboardGenerator: React.FC<
           shotCount: data.shotCount,
           aspectRatio: data.aspectRatio,
           imageToolId,
+          imageModel: data.imageModel,
           skipPromptConfirmation: true,
         })
 

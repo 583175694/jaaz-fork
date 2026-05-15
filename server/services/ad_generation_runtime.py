@@ -1,3 +1,4 @@
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from models.config_model import ModelInfo
@@ -31,7 +32,10 @@ async def maybe_compile_ad_image_messages(
     if not prompt:
         return messages
 
-    lower_prompt = prompt.lower()
+    prompt_without_meta, preserved_suffix = _split_preserved_structured_suffix(prompt)
+    effective_prompt = prompt_without_meta or prompt
+
+    lower_prompt = effective_prompt.lower()
     if "<input_images" in lower_prompt or content_mode == "multimodal":
         return messages
 
@@ -72,11 +76,11 @@ async def maybe_compile_ad_image_messages(
         {
             "provider": text_model.get("provider"),
             "model": text_model.get("model"),
-            "prompt_preview": prompt[:160],
+            "prompt_preview": effective_prompt[:160],
         },
     )
     brief = build_fallback_brief(
-        user_prompt=prompt,
+        user_prompt=effective_prompt,
         duration=8,
         aspect_ratio="16:9",
         platform_hint="storyboard image generation",
@@ -84,7 +88,7 @@ async def maybe_compile_ad_image_messages(
 
     compiled_prompt = compile_image_prompt(
         brief=brief,
-        original_prompt=prompt,
+        original_prompt=effective_prompt,
         aspect_ratio="16:9",
     )
     qa_issues = evaluate_image_prompt(compiled_prompt)
@@ -96,7 +100,7 @@ async def maybe_compile_ad_image_messages(
         {
             "provider": text_model.get("provider"),
             "model": text_model.get("model"),
-            "original_preview": prompt[:120],
+            "original_preview": effective_prompt[:120],
             "compiled_preview": compiled_prompt[:200],
             "qa_issues": qa_issues,
         },
@@ -104,9 +108,30 @@ async def maybe_compile_ad_image_messages(
 
     updated_messages = list(messages)
     updated_latest = dict(latest)
-    updated_latest["content"] = compiled_prompt
+    updated_latest["content"] = compiled_prompt + preserved_suffix
     updated_messages[-1] = updated_latest
     return updated_messages
+
+
+def _split_preserved_structured_suffix(prompt: str) -> Tuple[str, str]:
+    normalized = str(prompt or "")
+    patterns = [
+        r"<aspect_ratio>[\s\S]*?</aspect_ratio>",
+        r"<quantity>[\s\S]*?</quantity>",
+        r"<image_model>[\s\S]*?</image_model>",
+    ]
+    matches = [
+        match
+        for pattern in patterns
+        for match in re.finditer(pattern, normalized, flags=re.I)
+    ]
+    if not matches:
+        return normalized.strip(), ""
+
+    start_index = min(match.start() for match in matches)
+    suffix = normalized[start_index:].strip()
+    prompt_without_suffix = normalized[:start_index].rstrip()
+    return prompt_without_suffix, (f"\n\n{suffix}" if suffix else "")
 
 
 def _extract_latest_user_prompt(content: Any) -> Tuple[str, str]:

@@ -14,9 +14,25 @@ from utils.http_client import HttpClient
 from .image_base_provider import ImageProviderBase
 from ..utils.image_utils import generate_image_id, get_image_info_and_save
 
+APIPOD_IMAGE_DEFAULT_MODEL = "nano-banana-pro"
+APIPOD_IMAGE_SUPPORTED_MODELS = {"gpt-image-2", "nano-banana-pro"}
+
+
+def normalize_apipod_image_model_name(model_name: str) -> str:
+    normalized = str(model_name or "").strip().lower()
+    if normalized in APIPOD_IMAGE_SUPPORTED_MODELS:
+        return normalized
+    return APIPOD_IMAGE_DEFAULT_MODEL
+
+
+def get_apipod_image_model_name() -> str:
+    config = config_service.app_config.get("apipodgptimage", {})
+    configured = str(config.get("model_name", APIPOD_IMAGE_DEFAULT_MODEL) or APIPOD_IMAGE_DEFAULT_MODEL)
+    return normalize_apipod_image_model_name(configured)
+
 
 class APIPodGPTImageProvider(ImageProviderBase):
-    """APIPod GPT Image 2 / GPT Image 2 Edit provider."""
+    """APIPod image generation provider."""
 
     def _get_config(self) -> dict[str, Any]:
         config = config_service.app_config.get("apipodgptimage", {})
@@ -29,9 +45,9 @@ class APIPodGPTImageProvider(ImageProviderBase):
         api_key = str(config.get("api_key", "")).strip()
         api_url = str(config.get("url", "")).strip()
         if not api_key:
-            raise ValueError("APIPod GPT Image API key is not configured")
+            raise ValueError("APIPod image API key is not configured")
         if not api_url:
-            raise ValueError("APIPod GPT Image API URL is not configured")
+            raise ValueError("APIPod image API URL is not configured")
         return config
 
     def _build_headers(self, api_key: str) -> dict[str, str]:
@@ -52,7 +68,7 @@ class APIPodGPTImageProvider(ImageProviderBase):
             "prompt": prompt,
             "aspect_ratio": aspect_ratio,
         }
-        if model == "gpt-image-2":
+        if str(model or "").strip().lower() in {"gpt-image-2", "gpt-image-2-edit"}:
             payload["quality"] = "1K"
         if input_images:
             payload["image_urls"] = input_images
@@ -110,7 +126,7 @@ class APIPodGPTImageProvider(ImageProviderBase):
 
                 if response.status >= 400:
                     raise RuntimeError(
-                        "APIPod GPT Image status query failed "
+                        "APIPod image status query failed "
                         f"url={status_url} status={response.status} body={text[:500]}"
                     )
 
@@ -126,11 +142,11 @@ class APIPodGPTImageProvider(ImageProviderBase):
                         or task_data.get("message")
                         or "Unknown error"
                     )
-                    raise RuntimeError(f"APIPod GPT Image task failed: {error_message}")
+                    raise RuntimeError(f"APIPod image task failed: {error_message}")
 
                 await asyncio.sleep(3)
 
-        raise RuntimeError(f"APIPod GPT Image task timed out ({max_wait}s), task_id={task_id}")
+        raise RuntimeError(f"APIPod image task timed out ({max_wait}s), task_id={task_id}")
 
     async def generate(
         self,
@@ -144,7 +160,12 @@ class APIPodGPTImageProvider(ImageProviderBase):
         config = self._get_config()
         api_key = str(config.get("api_key", ""))
         api_url = str(config.get("url", "")).strip()
-        model_name = str(config.get("model_name", model or "gpt-image-2-edit"))
+        requested_model = str(model or "").strip()
+        model_name = (
+            normalize_apipod_image_model_name(requested_model)
+            if requested_model
+            else get_apipod_image_model_name()
+        )
         max_wait = float(config.get("max_wait_seconds", 600))
 
         payload = self._build_payload(
@@ -165,7 +186,7 @@ class APIPodGPTImageProvider(ImageProviderBase):
 
                 if response.status >= 400:
                     raise RuntimeError(
-                        "APIPod GPT Image request failed "
+                        "APIPod image request failed "
                         f"status={response.status} body={text[:500]}"
                     )
 
@@ -176,13 +197,13 @@ class APIPodGPTImageProvider(ImageProviderBase):
                 task_id = self._extract_task_id(result)
                 if not task_id:
                     raise RuntimeError(
-                        "APIPod GPT Image response missing image URL and task id"
+                        "APIPod image response missing image URL and task id"
                     )
                 result = await self._poll_task(task_id, api_key, api_url, max_wait=max_wait)
                 image_url = self._extract_image_url(result)
 
             if not image_url:
-                raise RuntimeError("APIPod GPT Image completed without image URL")
+                raise RuntimeError("APIPod image completed without image URL")
 
             image_id = generate_image_id()
             mime_type, width, height, extension = await get_image_info_and_save(
@@ -195,6 +216,6 @@ class APIPodGPTImageProvider(ImageProviderBase):
             filename = f"{image_id}.{extension}"
             return mime_type, width, height, filename
         except Exception as exc:
-            print("Error generating image with APIPod GPT Image:", exc)
+            print("Error generating image with APIPod image provider:", exc)
             traceback.print_exc()
             raise exc
