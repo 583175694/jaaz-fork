@@ -1,8 +1,11 @@
 import { Message, Model } from '@/types/types'
 import { ModelInfo, ToolInfo } from './model'
+import { getClientId } from '@/lib/client'
 
 export const getChatSession = async (sessionId: string) => {
-  const response = await fetch(`/api/chat_session/${sessionId}`)
+  const response = await fetch(
+    `/api/chat_session/${sessionId}?client_id=${encodeURIComponent(getClientId())}`
+  )
   const data = await response.json()
   return data as Message[]
 }
@@ -22,6 +25,7 @@ export const sendMessages = async (payload: {
     },
     body: JSON.stringify({
       messages: payload.newMessages,
+      client_id: getClientId(),
       canvas_id: payload.canvasId,
       session_id: payload.sessionId,
       text_model: payload.textModel,

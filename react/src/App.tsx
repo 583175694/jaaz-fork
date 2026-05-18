@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { SocketProvider } from '@/contexts/socket'
 import PasswordGate from '@/components/auth/PasswordGate'
 import { useTheme } from '@/hooks/use-theme'
+import { getOrCreateClientId } from '@/lib/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister'
@@ -15,6 +16,10 @@ import { routeTree } from './route-tree.gen'
 
 import '@/assets/style/App.css'
 import '@/i18n'
+
+if (typeof window !== 'undefined') {
+  getOrCreateClientId()
+}
 
 const router = createRouter({ routeTree })
 

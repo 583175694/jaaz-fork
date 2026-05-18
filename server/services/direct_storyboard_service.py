@@ -14,6 +14,16 @@ from services.ad_prompt_compiler_service import (
     rewrite_image_prompt,
 )
 from services.db_service import db_service
+from services.generation_job_service import (
+    JOB_PROVIDER_APIPOD_IMAGE,
+    JOB_TYPE_DIRECT_MULTIVIEW,
+    JOB_TYPE_DIRECT_STORYBOARD,
+    JOB_TYPE_STORYBOARD_REFINE,
+    create_media_job,
+    mark_job_failed,
+    mark_job_succeeded,
+    register_job_runner,
+)
 from services.prompt_confirmation_service import request_prompt_bundle_confirmation
 from services.production_workflow_service import (
     build_continuity_asset,
@@ -24,7 +34,6 @@ from services.production_workflow_service import (
     upsert_storyboard_plan,
 )
 from services.runtime_defaults import get_default_text_model
-from services.stream_service import add_stream_task, get_stream_task, remove_stream_task
 from services.websocket_service import send_to_websocket
 from services.tool_service import tool_service
 from tools.utils.image_generation_core import generate_image_with_provider
@@ -223,6 +232,38 @@ def _normalize_messages(data: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 def _normalize_skip_prompt_confirmation(data: Dict[str, Any]) -> bool:
     return bool(data.get("skip_prompt_confirmation", False))
+
+
+def _normalize_client_id(data: Dict[str, Any]) -> str:
+    return str(data.get("client_id", "") or "").strip()
+
+
+async def _ensure_media_session(
+    *,
+    client_id: str,
+    session_id: str,
+    canvas_id: str,
+    title: str,
+    model: str,
+    provider: str,
+) -> None:
+    existing_sessions = await db_service.list_sessions(canvas_id, client_id=client_id)
+    if any(str(session.get("id", "") or "") == session_id for session in existing_sessions):
+        return
+    await db_service.create_chat_session(
+        session_id,
+        model,
+        provider,
+        canvas_id,
+        title,
+        client_id=client_id,
+    )
+
+
+async def _ensure_owned_canvas(client_id: str, canvas_id: str) -> None:
+    canvas = await db_service.get_canvas_data(canvas_id, client_id=client_id)
+    if not canvas:
+        raise RuntimeError("Canvas not found for current client.")
 
 
 def _resolve_reference_tool(requested_tool_id: str, image_model: str) -> Dict[str, str]:
@@ -849,6 +890,154 @@ def _build_multiview_execution_prompt(
     )
 
 
+async def _confirm_direct_multiview_request(
+    *,
+    session_id: str,
+    canvas_id: str,
+    source_file_id: str,
+    prompt: str,
+    preset_name: str,
+    azimuth: int,
+    elevation: int,
+    framing: str,
+) -> str:
+    canvas_data = await _load_canvas_context(canvas_id)
+    file_info = _get_canvas_file(canvas_data, source_file_id)
+    source_meta = _extract_existing_storyboard_meta(file_info)
+    source_shot_id = str(source_meta.get("shot_id", "") or "")
+    if not source_shot_id:
+        source_shot_id = f"S_{source_file_id}"
+    shot_family_id = str(source_meta.get("shot_family_id", "") or "") or _build_shot_family_id(
+        str(source_meta.get("storyboard_id", f"sb_{source_file_id}") or f"sb_{source_file_id}"),
+        source_shot_id,
+    )
+    prompt_bundle = _build_multiview_prompt_bundle(
+        source_meta,
+        azimuth,
+        elevation,
+        framing,
+        preset_name,
+    )
+    _build_multiview_execution_prompt(prompt_bundle, source_meta, prompt)
+    return await request_prompt_bundle_confirmation(
+        session_id=session_id,
+        tool_name="generate_multiview_variant",
+        payload={
+            **prompt_bundle,
+            "shot_family_id": shot_family_id,
+            "target_id": shot_family_id,
+        },
+    )
+
+
+async def _confirm_direct_storyboard_request(
+    *,
+    session_id: str,
+    canvas_id: str,
+    prompt: str,
+    main_image_file_id: str,
+    reference_image_file_id: str,
+    aspect_ratio: str,
+    shot_count: int,
+    variant_count: int,
+) -> str:
+    canvas_data = await _load_canvas_context(canvas_id)
+    file_info = _get_canvas_file(canvas_data, main_image_file_id)
+    anchor = _build_main_image_anchor(main_image_file_id, file_info)
+    continuity = _build_continuity_bible(anchor)
+    continuity_asset = build_continuity_asset(
+        main_image_file_id=main_image_file_id,
+        anchor=anchor,
+        continuity_bible=continuity,
+        prompt=prompt,
+    )
+    continuity_prompt_bundle = {
+        "prompt_bundle_id": f"pb_{generate(size=8)}",
+        "task_type": "continuity_asset_confirmation",
+        "prompt": str(continuity_asset.get("prompt", "") or ""),
+        "main_image_summary": continuity_asset.get("main_image_summary", {}),
+        "continuity_summary": continuity_asset.get("continuity_summary", {}),
+        "display_summary": {
+            "source_main_image_file_id": main_image_file_id,
+            "status": continuity_asset.get("status", "draft"),
+            "version": continuity_asset.get("version", 1),
+        },
+        "continuity_asset": continuity_asset,
+    }
+    continuity_confirmation_status = await request_prompt_bundle_confirmation(
+        session_id=session_id,
+        tool_name="generate_storyboard_from_main_image",
+        payload=continuity_prompt_bundle,
+    )
+    if continuity_confirmation_status != "confirmed":
+        return continuity_confirmation_status
+
+    plan = _build_storyboard_plan(
+        main_image_file_id=main_image_file_id,
+        aspect_ratio=aspect_ratio,
+        shot_count=shot_count,
+        variant_count_per_shot=variant_count,
+        continuity_id=str(continuity.get("continuity_id", "")),
+    )
+    storyboard_plan_asset = build_storyboard_plan_asset(
+        continuity_asset=continuity_asset,
+        storyboard_plan=plan,
+        prompt=prompt,
+    )
+    prompt_bundle = _build_storyboard_prompt_bundle(
+        prompt,
+        anchor,
+        continuity,
+        plan,
+    )
+    prompt_bundle["storyboard_plan"] = storyboard_plan_asset
+    return await request_prompt_bundle_confirmation(
+        session_id=session_id,
+        tool_name="generate_storyboard_from_main_image",
+        payload=prompt_bundle,
+    )
+
+
+async def _confirm_direct_storyboard_refine_request(
+    *,
+    session_id: str,
+    canvas_id: str,
+    source_file_id: str,
+    prompt: str,
+    mode: str,
+) -> str:
+    canvas_data = await _load_canvas_context(canvas_id)
+    file_info = _get_canvas_file(canvas_data, source_file_id)
+    source_meta = _extract_existing_storyboard_meta(file_info)
+    source_shot_id = str(source_meta.get("shot_id", "") or "")
+    if not source_shot_id:
+        source_shot_id = f"S_{source_file_id}"
+    shot_family_id = str(source_meta.get("shot_family_id", "") or "") or _build_shot_family_id(
+        str(source_meta.get("storyboard_id", f"sb_{source_file_id}") or f"sb_{source_file_id}"),
+        source_shot_id,
+    )
+    prompt_text = (
+        f"对当前镜头进行单镜优化，保持主体身份、服装、产品形态、场景与灯光连续。\n"
+        f"修改意图：{prompt or '在当前 shot 下生成一个更合适的候选'}"
+    )
+    return await request_prompt_bundle_confirmation(
+        session_id=session_id,
+        tool_name="generate_multiview_variant",
+        payload={
+            "prompt_bundle_id": f"pb_{generate(size=8)}",
+            "task_type": "storyboard_refinement",
+            "target_id": shot_family_id,
+            "prompt": prompt_text,
+            "display_summary": {
+                "source_file_id": source_file_id,
+                "shot_id": source_shot_id,
+                "shot_family_id": shot_family_id,
+                "mode": mode,
+            },
+        },
+    )
+
+
 def _parse_angle(value: Any, default: int) -> int:
     try:
         return int(float(value))
@@ -963,8 +1152,9 @@ def _preferred_position_for_shot_append(
     return None
 
 
-async def handle_direct_storyboard(data: Dict[str, Any]) -> None:
+async def handle_direct_storyboard(data: Dict[str, Any]) -> Dict[str, Any]:
     messages = _normalize_messages(data)
+    client_id = _normalize_client_id(data)
     session_id = str(data.get("session_id", "") or "")
     canvas_id = str(data.get("canvas_id", "") or "")
     prompt = _normalize_prompt(data)
@@ -977,42 +1167,61 @@ async def handle_direct_storyboard(data: Dict[str, Any]) -> None:
     image_tool_id = _normalize_tool_id(data)
     skip_prompt_confirmation = _normalize_skip_prompt_confirmation(data)
 
-    if not session_id or not canvas_id or not main_image_file_id:
+    if not client_id or not session_id or not canvas_id or not main_image_file_id:
         raise RuntimeError("Storyboard generation requires session_id, canvas_id, and main_image_file_id.")
 
-    existing_task = get_stream_task(session_id)
-    if existing_task and not existing_task.done():
-        await send_to_websocket(
-            session_id,
-            {"type": "info", "info": "当前任务仍在进行中，请等待完成后再生成分镜。"},
-        )
-        return
+    await _ensure_owned_canvas(client_id, canvas_id)
+    await _ensure_media_session(
+        client_id=client_id,
+        session_id=session_id,
+        canvas_id=canvas_id,
+        title=prompt[:200] if prompt else "Generate Storyboard",
+        model=image_model,
+        provider=JOB_PROVIDER_APIPOD_IMAGE,
+    )
 
-    if messages:
-        await db_service.create_message(session_id, messages[-1].get("role", "user"), json.dumps(messages[-1]))
-
-    task = asyncio.create_task(
-        _process_direct_storyboard(
+    if not skip_prompt_confirmation:
+        confirmation_status = await _confirm_direct_storyboard_request(
             session_id=session_id,
             canvas_id=canvas_id,
             prompt=prompt,
             main_image_file_id=main_image_file_id,
             reference_image_file_id=reference_image_file_id,
             aspect_ratio=aspect_ratio,
-            image_model=image_model,
             shot_count=shot_count,
             variant_count=variant_count,
-            image_tool_id=image_tool_id,
-            skip_prompt_confirmation=skip_prompt_confirmation,
-            messages=messages,
         )
+        if confirmation_status != "confirmed":
+            return {"status": confirmation_status}
+        skip_prompt_confirmation = True
+
+    job = await create_media_job(
+        job_type=JOB_TYPE_DIRECT_STORYBOARD,
+        client_id=client_id,
+        session_id=session_id,
+        canvas_id=canvas_id,
+        provider=JOB_PROVIDER_APIPOD_IMAGE,
+        request_payload={
+            "messages": messages,
+            "client_id": client_id,
+            "session_id": session_id,
+            "canvas_id": canvas_id,
+            "prompt": prompt,
+            "main_image_file_id": main_image_file_id,
+            "reference_image_file_id": reference_image_file_id,
+            "aspect_ratio": aspect_ratio,
+            "image_model": image_model,
+            "shot_count": shot_count,
+            "variant_count": variant_count,
+            "image_tool_id": image_tool_id,
+            "skip_prompt_confirmation": skip_prompt_confirmation,
+        },
     )
-    add_stream_task(session_id, task)
-    try:
-        await task
-    finally:
-        remove_stream_task(session_id)
-        await send_to_websocket(session_id, {"type": "done"})
+    if not bool(job.get("deduplicated")) and messages:
+        await db_service.create_message(
+            session_id, messages[-1].get("role", "user"), json.dumps(messages[-1])
+        )
+    return job
 
 
 async def _process_direct_storyboard(
@@ -1028,7 +1237,7 @@ async def _process_direct_storyboard(
     image_tool_id: str,
     skip_prompt_confirmation: bool,
     messages: List[Dict[str, Any]],
-) -> None:
+) -> Dict[str, Any]:
     try:
         response = await create_direct_storyboard_response(
             session_id=session_id,
@@ -1048,6 +1257,7 @@ async def _process_direct_storyboard(
         traceback.print_exc()
         response = _build_generation_failure_response("分镜图生成", exc)
     await _finalize_direct_generation_response(session_id, messages, response)
+    return response
 
 
 async def create_direct_storyboard_response(
@@ -1252,8 +1462,9 @@ async def create_direct_storyboard_response(
     }
 
 
-async def handle_direct_multiview(data: Dict[str, Any]) -> None:
+async def handle_direct_multiview(data: Dict[str, Any]) -> Dict[str, Any]:
     messages = _normalize_messages(data)
+    client_id = _normalize_client_id(data)
     session_id = str(data.get("session_id", "") or "")
     canvas_id = str(data.get("canvas_id", "") or "")
     source_file_id = str(data.get("source_file_id", "") or "").strip()
@@ -1264,45 +1475,63 @@ async def handle_direct_multiview(data: Dict[str, Any]) -> None:
     preview_only = _normalize_preview_only(data)
     replace_source = _normalize_replace_source(data)
 
-    if not session_id or not canvas_id or not source_file_id:
+    if not client_id or not session_id or not canvas_id or not source_file_id:
         raise RuntimeError("Multiview generation requires session_id, canvas_id, and source_file_id.")
 
-    existing_task = get_stream_task(session_id)
-    if existing_task and not existing_task.done():
-        await send_to_websocket(
-            session_id,
-            {"type": "info", "info": "当前任务仍在进行中，请等待完成后再生成多视角候选。"},
-        )
-        return
-
-    if messages:
-        await db_service.create_message(session_id, messages[-1].get("role", "user"), json.dumps(messages[-1]))
-
-    task = asyncio.create_task(
-        _process_direct_multiview(
-            session_id=session_id,
-            canvas_id=canvas_id,
-            source_file_id=source_file_id,
-            reference_image_file_id=reference_image_file_id,
-            prompt=_normalize_prompt(data),
-            image_tool_id=image_tool_id,
-            aspect_ratio=aspect_ratio,
-            image_model=image_model,
-            preview_only=preview_only,
-            replace_source=replace_source,
-            preset_name=_normalize_preset_name(data.get("preset_name")),
-            azimuth=_parse_angle(data.get("azimuth"), 45),
-            elevation=_parse_angle(data.get("elevation"), 0),
-            framing=_normalize_framing(data.get("framing")),
-            messages=messages,
-        )
+    await _ensure_owned_canvas(client_id, canvas_id)
+    await _ensure_media_session(
+        client_id=client_id,
+        session_id=session_id,
+        canvas_id=canvas_id,
+        title=_normalize_prompt(data)[:200] if _normalize_prompt(data) else "Generate Multiview",
+        model=image_model,
+        provider=JOB_PROVIDER_APIPOD_IMAGE,
     )
-    add_stream_task(session_id, task)
-    try:
-        await task
-    finally:
-        remove_stream_task(session_id)
-        await send_to_websocket(session_id, {"type": "done"})
+
+    confirmation_status = await _confirm_direct_multiview_request(
+        session_id=session_id,
+        canvas_id=canvas_id,
+        source_file_id=source_file_id,
+        prompt=_normalize_prompt(data),
+        preset_name=_normalize_preset_name(data.get("preset_name")),
+        azimuth=_parse_angle(data.get("azimuth"), 45),
+        elevation=_parse_angle(data.get("elevation"), 0),
+        framing=_normalize_framing(data.get("framing")),
+    )
+    if confirmation_status != "confirmed":
+        return {"status": confirmation_status}
+
+    job = await create_media_job(
+        job_type=JOB_TYPE_DIRECT_MULTIVIEW,
+        client_id=client_id,
+        session_id=session_id,
+        canvas_id=canvas_id,
+        provider=JOB_PROVIDER_APIPOD_IMAGE,
+        request_payload={
+            "messages": messages,
+            "client_id": client_id,
+            "session_id": session_id,
+            "canvas_id": canvas_id,
+            "source_file_id": source_file_id,
+            "reference_image_file_id": reference_image_file_id,
+            "prompt": _normalize_prompt(data),
+            "image_tool_id": image_tool_id,
+            "aspect_ratio": aspect_ratio,
+            "image_model": image_model,
+            "preview_only": preview_only,
+            "replace_source": replace_source,
+            "preset_name": _normalize_preset_name(data.get("preset_name")),
+            "azimuth": _parse_angle(data.get("azimuth"), 45),
+            "elevation": _parse_angle(data.get("elevation"), 0),
+            "framing": _normalize_framing(data.get("framing")),
+            "skip_prompt_confirmation": True,
+        },
+    )
+    if not bool(job.get("deduplicated")) and messages:
+        await db_service.create_message(
+            session_id, messages[-1].get("role", "user"), json.dumps(messages[-1])
+        )
+    return job
 
 
 async def _process_direct_multiview(
@@ -1320,8 +1549,9 @@ async def _process_direct_multiview(
     azimuth: int,
     elevation: int,
     framing: str,
+    skip_prompt_confirmation: bool,
     messages: List[Dict[str, Any]],
-) -> None:
+) -> Dict[str, Any]:
     try:
         response = await create_direct_multiview_response(
             session_id=session_id,
@@ -1338,12 +1568,14 @@ async def _process_direct_multiview(
             azimuth=azimuth,
             elevation=elevation,
             framing=framing,
+            skip_prompt_confirmation=skip_prompt_confirmation,
         )
     except Exception as exc:
         print("Error processing direct multiview:", exc)
         traceback.print_exc()
         response = _build_generation_failure_response("多视角候选生成", exc)
     await _finalize_direct_generation_response(session_id, messages, response)
+    return response
 
 
 async def create_direct_multiview_response(
@@ -1361,6 +1593,7 @@ async def create_direct_multiview_response(
     azimuth: int,
     elevation: int,
     framing: str,
+    skip_prompt_confirmation: bool = False,
 ) -> Dict[str, Any]:
     canvas_data = await _load_canvas_context(canvas_id)
     file_info = _get_canvas_file(canvas_data, source_file_id)
@@ -1383,25 +1616,26 @@ async def create_direct_multiview_response(
     )
     prompt_bundle = _build_multiview_prompt_bundle(source_meta, azimuth, elevation, framing, preset_name)
     execution_prompt = _build_multiview_execution_prompt(prompt_bundle, source_meta, prompt)
-    confirmation_status = await request_prompt_bundle_confirmation(
-        session_id=session_id,
-        tool_name="generate_multiview_variant",
-        payload={
-            **prompt_bundle,
-            "shot_family_id": shot_family_id,
-            "target_id": shot_family_id,
-        },
-    )
-    if confirmation_status == "revise":
-        return {
-            "role": "assistant",
-            "content": "已返回修改，请调整多视角参数后重新提交。",
-        }
-    if confirmation_status != "confirmed":
-        return {
-            "role": "assistant",
-            "content": "已取消多视角候选生成。",
-        }
+    if not skip_prompt_confirmation:
+        confirmation_status = await request_prompt_bundle_confirmation(
+            session_id=session_id,
+            tool_name="generate_multiview_variant",
+            payload={
+                **prompt_bundle,
+                "shot_family_id": shot_family_id,
+                "target_id": shot_family_id,
+            },
+        )
+        if confirmation_status == "revise":
+            return {
+                "role": "assistant",
+                "content": "已返回修改，请调整多视角参数后重新提交。",
+            }
+        if confirmation_status != "confirmed":
+            return {
+                "role": "assistant",
+                "content": "已取消多视角候选生成。",
+            }
     next_variant_number = _next_variant_index(canvas_data, source_shot_id)
     variant_id = f"{source_shot_id}V{next_variant_number}"
 
@@ -1517,8 +1751,9 @@ async def create_direct_multiview_response(
     }
 
 
-async def handle_direct_storyboard_refine(data: Dict[str, Any]) -> None:
+async def handle_direct_storyboard_refine(data: Dict[str, Any]) -> Dict[str, Any]:
     messages = _normalize_messages(data)
+    client_id = _normalize_client_id(data)
     session_id = str(data.get("session_id", "") or "")
     canvas_id = str(data.get("canvas_id", "") or "")
     source_file_id = str(data.get("source_file_id", "") or "").strip()
@@ -1528,40 +1763,55 @@ async def handle_direct_storyboard_refine(data: Dict[str, Any]) -> None:
     image_model = _normalize_image_model(data)
     mode = _normalize_mode(data, "append")
 
-    if not session_id or not canvas_id or not source_file_id:
+    if not client_id or not session_id or not canvas_id or not source_file_id:
         raise RuntimeError("Storyboard refinement requires session_id, canvas_id, and source_file_id.")
 
-    existing_task = get_stream_task(session_id)
-    if existing_task and not existing_task.done():
-        await send_to_websocket(
-            session_id,
-            {"type": "info", "info": "当前任务仍在进行中，请等待完成后再编辑当前镜头。"},
-        )
-        return
-
-    if messages:
-        await db_service.create_message(session_id, messages[-1].get("role", "user"), json.dumps(messages[-1]))
-
-    task = asyncio.create_task(
-        _process_direct_storyboard_refine(
-            session_id=session_id,
-            canvas_id=canvas_id,
-            source_file_id=source_file_id,
-            reference_image_file_id=reference_image_file_id,
-            prompt=_normalize_prompt(data),
-            image_tool_id=image_tool_id,
-            aspect_ratio=aspect_ratio,
-            image_model=image_model,
-            mode=mode,
-            messages=messages,
-        )
+    await _ensure_owned_canvas(client_id, canvas_id)
+    await _ensure_media_session(
+        client_id=client_id,
+        session_id=session_id,
+        canvas_id=canvas_id,
+        title=_normalize_prompt(data)[:200] if _normalize_prompt(data) else "Refine Storyboard Frame",
+        model=image_model,
+        provider=JOB_PROVIDER_APIPOD_IMAGE,
     )
-    add_stream_task(session_id, task)
-    try:
-        await task
-    finally:
-        remove_stream_task(session_id)
-        await send_to_websocket(session_id, {"type": "done"})
+
+    confirmation_status = await _confirm_direct_storyboard_refine_request(
+        session_id=session_id,
+        canvas_id=canvas_id,
+        source_file_id=source_file_id,
+        prompt=_normalize_prompt(data),
+        mode=mode,
+    )
+    if confirmation_status != "confirmed":
+        return {"status": confirmation_status}
+
+    job = await create_media_job(
+        job_type=JOB_TYPE_STORYBOARD_REFINE,
+        client_id=client_id,
+        session_id=session_id,
+        canvas_id=canvas_id,
+        provider=JOB_PROVIDER_APIPOD_IMAGE,
+        request_payload={
+            "messages": messages,
+            "client_id": client_id,
+            "session_id": session_id,
+            "canvas_id": canvas_id,
+            "source_file_id": source_file_id,
+            "reference_image_file_id": reference_image_file_id,
+            "prompt": _normalize_prompt(data),
+            "image_tool_id": image_tool_id,
+            "aspect_ratio": aspect_ratio,
+            "image_model": image_model,
+            "mode": mode,
+            "skip_prompt_confirmation": True,
+        },
+    )
+    if not bool(job.get("deduplicated")) and messages:
+        await db_service.create_message(
+            session_id, messages[-1].get("role", "user"), json.dumps(messages[-1])
+        )
+    return job
 
 
 async def _process_direct_storyboard_refine(
@@ -1574,8 +1824,9 @@ async def _process_direct_storyboard_refine(
     aspect_ratio: str,
     image_model: str,
     mode: str,
+    skip_prompt_confirmation: bool,
     messages: List[Dict[str, Any]],
-) -> None:
+) -> Dict[str, Any]:
     try:
         response = await create_direct_storyboard_refine_response(
             session_id=session_id,
@@ -1587,12 +1838,23 @@ async def _process_direct_storyboard_refine(
             aspect_ratio=aspect_ratio,
             image_model=image_model,
             mode=mode,
+            skip_prompt_confirmation=skip_prompt_confirmation,
         )
     except Exception as exc:
         print("Error processing storyboard refine:", exc)
         traceback.print_exc()
         response = _build_generation_failure_response("分镜编辑", exc)
     await _finalize_direct_generation_response(session_id, messages, response)
+    return response
+
+
+def _extract_generation_error_message(response: Dict[str, Any]) -> Optional[str]:
+    content = response.get("content")
+    if isinstance(content, str):
+        text = content.strip()
+        if "失败：" in text:
+            return text
+    return None
 
 
 async def create_direct_storyboard_refine_response(
@@ -1605,6 +1867,7 @@ async def create_direct_storyboard_refine_response(
     aspect_ratio: str,
     image_model: str,
     mode: str,
+    skip_prompt_confirmation: bool = False,
 ) -> Dict[str, Any]:
     canvas_data = await _load_canvas_context(canvas_id)
     file_info = _get_canvas_file(canvas_data, source_file_id)
@@ -1639,32 +1902,33 @@ async def create_direct_storyboard_refine_response(
         + "Keep the same location, same background family, same supporting cast/props when visible, and same time-of-day feeling.\n"
         + "Do not change to a new scene. Keep this as the same storyboard shot."
     )
-    confirmation_status = await request_prompt_bundle_confirmation(
-        session_id=session_id,
-        tool_name="generate_multiview_variant",
-        payload={
-            "prompt_bundle_id": f"pb_{generate(size=8)}",
-            "task_type": "storyboard_refinement",
-            "target_id": shot_family_id,
-            "prompt": prompt_text,
-            "display_summary": {
-                "source_file_id": source_file_id,
-                "shot_id": source_shot_id,
-                "shot_family_id": shot_family_id,
-                "mode": mode,
+    if not skip_prompt_confirmation:
+        confirmation_status = await request_prompt_bundle_confirmation(
+            session_id=session_id,
+            tool_name="generate_multiview_variant",
+            payload={
+                "prompt_bundle_id": f"pb_{generate(size=8)}",
+                "task_type": "storyboard_refinement",
+                "target_id": shot_family_id,
+                "prompt": prompt_text,
+                "display_summary": {
+                    "source_file_id": source_file_id,
+                    "shot_id": source_shot_id,
+                    "shot_family_id": shot_family_id,
+                    "mode": mode,
+                },
             },
-        },
-    )
-    if confirmation_status == "revise":
-        return {
-            "role": "assistant",
-            "content": "已返回修改，请调整单镜优化意图后重新提交。",
-        }
-    if confirmation_status != "confirmed":
-        return {
-            "role": "assistant",
-            "content": "已取消单镜优化。",
-        }
+        )
+        if confirmation_status == "revise":
+            return {
+                "role": "assistant",
+                "content": "已返回修改，请调整单镜优化意图后重新提交。",
+            }
+        if confirmation_status != "confirmed":
+            return {
+                "role": "assistant",
+                "content": "已取消单镜优化。",
+            }
 
     await generate_image_with_provider(
         canvas_id=canvas_id,
@@ -1776,11 +2040,110 @@ async def create_direct_storyboard_refine_response(
     }
 
 
+async def process_direct_storyboard_job(job_id: str) -> None:
+    job = await db_service.get_generation_job(job_id)
+    if not job:
+        raise RuntimeError(f"job not found: {job_id}")
+    payload = job.get("request_payload")
+    if not isinstance(payload, str):
+        raise RuntimeError("job request payload is invalid")
+    data = json.loads(payload)
+    response = await _process_direct_storyboard(
+        session_id=str(data.get("session_id", "") or ""),
+        canvas_id=str(data.get("canvas_id", "") or ""),
+        prompt=_normalize_prompt(data),
+        main_image_file_id=_normalize_main_image_file_id(data),
+        reference_image_file_id=_normalize_reference_image_file_id(data, "reference_image_file_id"),
+        aspect_ratio=_normalize_aspect_ratio(data),
+        image_model=_normalize_image_model(data),
+        shot_count=_normalize_shot_count(data),
+        variant_count=_normalize_variant_count(data),
+        image_tool_id=_normalize_tool_id(data),
+        skip_prompt_confirmation=_normalize_skip_prompt_confirmation(data),
+        messages=_normalize_messages(data),
+    )
+    error_message = _extract_generation_error_message(response)
+    if error_message:
+        await mark_job_failed(job_id, error_message=error_message)
+    else:
+        await mark_job_succeeded(job_id)
+    await send_to_websocket(str(data.get("session_id", "") or ""), {"type": "done"})
+
+
+async def process_direct_multiview_job(job_id: str) -> None:
+    job = await db_service.get_generation_job(job_id)
+    if not job:
+        raise RuntimeError(f"job not found: {job_id}")
+    payload = job.get("request_payload")
+    if not isinstance(payload, str):
+        raise RuntimeError("job request payload is invalid")
+    data = json.loads(payload)
+    response = await _process_direct_multiview(
+        session_id=str(data.get("session_id", "") or ""),
+        canvas_id=str(data.get("canvas_id", "") or ""),
+        source_file_id=str(data.get("source_file_id", "") or ""),
+        reference_image_file_id=_normalize_reference_image_file_id(data, "reference_image_file_id"),
+        prompt=_normalize_prompt(data),
+        image_tool_id=_normalize_tool_id(data),
+        aspect_ratio=_normalize_aspect_ratio(data),
+        image_model=_normalize_image_model(data),
+        preview_only=_normalize_preview_only(data),
+        replace_source=_normalize_replace_source(data),
+        preset_name=_normalize_preset_name(data.get("preset_name")),
+        azimuth=_parse_angle(data.get("azimuth"), 45),
+        elevation=_parse_angle(data.get("elevation"), 0),
+        framing=_normalize_framing(data.get("framing")),
+        skip_prompt_confirmation=bool(data.get("skip_prompt_confirmation", False)),
+        messages=_normalize_messages(data),
+    )
+    error_message = _extract_generation_error_message(response)
+    if error_message:
+        await mark_job_failed(job_id, error_message=error_message)
+    else:
+        await mark_job_succeeded(job_id)
+    await send_to_websocket(str(data.get("session_id", "") or ""), {"type": "done"})
+
+
+async def process_direct_storyboard_refine_job(job_id: str) -> None:
+    job = await db_service.get_generation_job(job_id)
+    if not job:
+        raise RuntimeError(f"job not found: {job_id}")
+    payload = job.get("request_payload")
+    if not isinstance(payload, str):
+        raise RuntimeError("job request payload is invalid")
+    data = json.loads(payload)
+    response = await _process_direct_storyboard_refine(
+        session_id=str(data.get("session_id", "") or ""),
+        canvas_id=str(data.get("canvas_id", "") or ""),
+        source_file_id=str(data.get("source_file_id", "") or ""),
+        reference_image_file_id=_normalize_reference_image_file_id(data, "reference_image_file_id"),
+        prompt=_normalize_prompt(data),
+        image_tool_id=_normalize_tool_id(data),
+        aspect_ratio=_normalize_aspect_ratio(data),
+        image_model=_normalize_image_model(data),
+        mode=_normalize_mode(data, "append"),
+        skip_prompt_confirmation=bool(data.get("skip_prompt_confirmation", False)),
+        messages=_normalize_messages(data),
+    )
+    error_message = _extract_generation_error_message(response)
+    if error_message:
+        await mark_job_failed(job_id, error_message=error_message)
+    else:
+        await mark_job_succeeded(job_id)
+    await send_to_websocket(str(data.get("session_id", "") or ""), {"type": "done"})
+
+
+register_job_runner(JOB_TYPE_DIRECT_STORYBOARD, process_direct_storyboard_job)
+register_job_runner(JOB_TYPE_DIRECT_MULTIVIEW, process_direct_multiview_job)
+register_job_runner(JOB_TYPE_STORYBOARD_REFINE, process_direct_storyboard_refine_job)
+
+
 async def set_storyboard_primary_variant(
     canvas_id: str,
     file_id: str,
+    client_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    canvas = await db_service.get_canvas_data(canvas_id)
+    canvas = await db_service.get_canvas_data(canvas_id, client_id=client_id)
     canvas_data = (canvas or {}).get("data", {}) if isinstance(canvas, dict) else {}
     files = canvas_data.get("files", {}) if isinstance(canvas_data, dict) else {}
     if not isinstance(files, dict):
@@ -1815,7 +2178,7 @@ async def set_storyboard_primary_variant(
         current_file["storyboardMeta"] = next_meta
         updated_count += 1
 
-    await db_service.save_canvas_data(canvas_id, json.dumps(canvas_data))
+    await db_service.save_canvas_data(canvas_id, json.dumps(canvas_data), client_id=client_id)
     return {
         "storyboard_id": storyboard_id,
         "shot_id": shot_id,

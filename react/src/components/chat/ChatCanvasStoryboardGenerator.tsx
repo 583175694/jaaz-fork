@@ -6,7 +6,7 @@ import {
 } from '@/components/chat/canvasGenerationUtils'
 import { useConfigs } from '@/contexts/configs'
 import { eventBus, TCanvasGenerateStoryboardEvent } from '@/lib/event'
-import { Message, PendingType } from '@/types/types'
+import { GenerationJob, Message } from '@/types/types'
 import { useCallback, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 
@@ -15,7 +15,7 @@ type ChatCanvasStoryboardGeneratorProps = {
   canvasId: string
   messages: Message[]
   setMessages: (messages: Message[]) => void
-  setPending: (pending: PendingType) => void
+  onQueueJobAccepted: (job: GenerationJob) => void
   scrollToBottom: () => void
 }
 
@@ -26,7 +26,7 @@ const ChatCanvasStoryboardGenerator: React.FC<
   canvasId,
   messages,
   setMessages,
-  setPending,
+  onQueueJobAccepted,
   scrollToBottom,
 }) => {
   const inFlightRef = useRef(false)
@@ -35,12 +35,10 @@ const ChatCanvasStoryboardGenerator: React.FC<
   const handleGenerateStoryboard = useCallback(
     async (data: TCanvasGenerateStoryboardEvent) => {
       if (inFlightRef.current) {
-        toast.info('分镜生成正在进行中，请等待当前任务完成')
         return
       }
 
       inFlightRef.current = true
-      setPending('text')
 
       try {
         const imageToolId = getPreferredReferenceImageToolId(selectedTools)
@@ -97,7 +95,7 @@ const ChatCanvasStoryboardGenerator: React.FC<
         setMessages(newMessages)
         scrollToBottom()
 
-        await sendDirectStoryboardGenerate({
+        const response = await sendDirectStoryboardGenerate({
           sessionId,
           canvasId,
           newMessages,
@@ -110,6 +108,15 @@ const ChatCanvasStoryboardGenerator: React.FC<
           imageModel: data.imageModel,
           skipPromptConfirmation: true,
         })
+        if (response.job?.deduplicated) {
+          setMessages(messages)
+          toast.info('相同分镜任务已在队列中', {
+            description: '不会重复创建任务，已复用当前排队项。',
+          })
+        }
+        if (response?.job) {
+          onQueueJobAccepted(response.job)
+        }
 
         window.dispatchEvent(
           new CustomEvent('app:refresh-canvas', {
@@ -124,7 +131,6 @@ const ChatCanvasStoryboardGenerator: React.FC<
         toast.error('发起分镜生成失败', {
           description: String(error),
         })
-        setPending(false)
       } finally {
         inFlightRef.current = false
       }
@@ -136,7 +142,7 @@ const ChatCanvasStoryboardGenerator: React.FC<
       selectedTools,
       sessionId,
       setMessages,
-      setPending,
+      onQueueJobAccepted,
     ]
   )
 

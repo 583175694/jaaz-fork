@@ -5,14 +5,18 @@ import {
   getCurrentVideoBrief,
   getPendingWorkflowConfirmations,
 } from '@/api/canvas'
+import { listClientGenerationJobs } from '@/api/video'
 import Blur from '@/components/common/Blur'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { eventBus, TEvents } from '@/lib/event'
+import { getClientId } from '@/lib/client'
 import ChatCanvasMultiviewGenerator from './ChatCanvasMultiviewGenerator'
+import QueuePreview from './QueuePreview'
 import ChatCanvasStoryboardGenerator from './ChatCanvasStoryboardGenerator'
 import ChatCanvasVideoGenerator from './ChatCanvasVideoGenerator'
 import {
   AssistantMessage,
+  GenerationJob,
   Message,
   Model,
   PendingType,
@@ -86,7 +90,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const [pending, setPending] = useState<PendingType>(
     initCanvas ? 'text' : false
   )
+  const [queueItems, setQueueItems] = useState<GenerationJob[]>([])
   const mergedToolCallIds = useRef<string[]>([])
+  const clientId = getClientId()
 
   const sessionId = session?.id ?? searchSessionId
 
@@ -111,6 +117,85 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
       })
     }, 200)
   }, [])
+
+  const upsertQueueJob = useCallback((job: GenerationJob) => {
+    setQueueItems((prev) => {
+      const filtered = prev.filter((item) => item.id !== job.id)
+      const next =
+        job.status === 'succeeded' || job.status === 'failed' || job.status === 'cancelled'
+          ? filtered
+          : [...filtered, job]
+      return next.sort((a, b) => {
+        const timeDiff =
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        if (timeDiff !== 0) {
+          return timeDiff
+        }
+        return a.id.localeCompare(b.id)
+      })
+    })
+  }, [])
+
+  const removeQueueJob = useCallback((jobId: string) => {
+    setQueueItems((prev) => prev.filter((item) => item.id !== jobId))
+  }, [])
+
+  const mergeQueueJobFromEvent = useCallback(
+    (
+      data:
+        | TEvents['Socket::Session::JobQueued']
+        | TEvents['Socket::Session::JobRunning']
+        | TEvents['Socket::Session::JobProgress']
+        | TEvents['Socket::Session::JobSucceeded']
+        | TEvents['Socket::Session::JobFailed']
+    ) => {
+      if (data.client_id !== clientId || data.canvas_id !== canvasId) {
+        return
+      }
+
+      setQueueItems((prev) => {
+        const existing = prev.find((item) => item.id === data.job_id)
+        if (
+          data.status === 'succeeded' ||
+          data.status === 'failed' ||
+          data.status === 'cancelled'
+        ) {
+          return prev.filter((item) => item.id !== data.job_id)
+        }
+
+        const nextJob: GenerationJob = {
+          id: data.job_id,
+          client_id: data.client_id,
+          session_id: data.session_id,
+          canvas_id: data.canvas_id,
+          type: data.job_type,
+          status: data.status as GenerationJob['status'],
+          provider: existing?.provider || '',
+          summary_text: data.summary_text || existing?.summary_text || data.job_type,
+          progress: data.progress ?? existing?.progress ?? null,
+          error_message: data.error_message ?? existing?.error_message ?? null,
+          created_at: existing?.created_at || new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          started_at:
+            data.status === 'running'
+              ? existing?.started_at || new Date().toISOString()
+              : existing?.started_at,
+          finished_at: existing?.finished_at,
+        }
+
+        const filtered = prev.filter((item) => item.id !== data.job_id)
+        return [...filtered, nextJob].sort((a, b) => {
+          const timeDiff =
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          if (timeDiff !== 0) {
+            return timeDiff
+          }
+          return a.id.localeCompare(b.id)
+        })
+      })
+    },
+    [canvasId, clientId]
+  )
 
   const submitToolConfirmation = useCallback(
     async (
@@ -530,6 +615,49 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     [canvasId, sessionId]
   )
 
+  const handleJobQueued = useCallback(
+    (data: TEvents['Socket::Session::JobQueued']) => {
+      mergeQueueJobFromEvent(data)
+    },
+    [mergeQueueJobFromEvent]
+  )
+
+  const handleJobRunning = useCallback(
+    (data: TEvents['Socket::Session::JobRunning']) => {
+      mergeQueueJobFromEvent(data)
+    },
+    [mergeQueueJobFromEvent]
+  )
+
+  const handleJobProgress = useCallback(
+    (data: TEvents['Socket::Session::JobProgress']) => {
+      mergeQueueJobFromEvent(data)
+    },
+    [mergeQueueJobFromEvent]
+  )
+
+  const handleJobSucceeded = useCallback(
+    (data: TEvents['Socket::Session::JobSucceeded']) => {
+      if (data.client_id === clientId && data.canvas_id === canvasId) {
+        removeQueueJob(data.job_id)
+      }
+    },
+    [canvasId, clientId, removeQueueJob]
+  )
+
+  const handleJobFailed = useCallback(
+    (data: TEvents['Socket::Session::JobFailed']) => {
+      if (data.client_id !== clientId || data.canvas_id !== canvasId) {
+        return
+      }
+      removeQueueJob(data.job_id)
+      toast.error('媒体任务执行失败', {
+        description: data.error_message || '后台任务执行失败',
+      })
+    },
+    [canvasId, clientId, removeQueueJob]
+  )
+
   const handleImageGenerated = useCallback(
     (data: TEvents['Socket::Session::ImageGenerated']) => {
       if (
@@ -541,7 +669,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
       }
 
       console.log('⭐️dispatching image_generated', data)
-      setPending('image')
       window.dispatchEvent(
         new CustomEvent('app:refresh-canvas', {
           detail: {
@@ -618,7 +745,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
       }
 
       console.log('🎥 Chat received video_generated', data)
-      setPending(false)
       window.dispatchEvent(
         new CustomEvent('app:refresh-canvas', {
           detail: {
@@ -643,6 +769,11 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     scrollEl?.addEventListener('scroll', handleScroll)
 
     eventBus.on('Socket::Session::Delta', handleDelta)
+    eventBus.on('Socket::Session::JobQueued', handleJobQueued)
+    eventBus.on('Socket::Session::JobRunning', handleJobRunning)
+    eventBus.on('Socket::Session::JobProgress', handleJobProgress)
+    eventBus.on('Socket::Session::JobSucceeded', handleJobSucceeded)
+    eventBus.on('Socket::Session::JobFailed', handleJobFailed)
     eventBus.on('Socket::Session::ToolCall', handleToolCall)
     eventBus.on(
       'Socket::Session::ToolCallPendingConfirmation',
@@ -662,6 +793,11 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
       scrollEl?.removeEventListener('scroll', handleScroll)
 
       eventBus.off('Socket::Session::Delta', handleDelta)
+      eventBus.off('Socket::Session::JobQueued', handleJobQueued)
+      eventBus.off('Socket::Session::JobRunning', handleJobRunning)
+      eventBus.off('Socket::Session::JobProgress', handleJobProgress)
+      eventBus.off('Socket::Session::JobSucceeded', handleJobSucceeded)
+      eventBus.off('Socket::Session::JobFailed', handleJobFailed)
       eventBus.off('Socket::Session::ToolCall', handleToolCall)
       eventBus.off(
         'Socket::Session::ToolCallPendingConfirmation',
@@ -687,7 +823,26 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
       eventBus.off('Socket::Session::Error', handleError)
       eventBus.off('Socket::Session::Info', handleInfo)
     }
-  })
+  }, [
+    handleAllMessages,
+    handleDelta,
+    handleDone,
+    handleError,
+    handleImageGenerated,
+    handleInfo,
+    handleJobFailed,
+    handleJobProgress,
+    handleJobQueued,
+    handleJobRunning,
+    handleJobSucceeded,
+    handleToolCall,
+    handleToolCallArguments,
+    handleToolCallCancelled,
+    handleToolCallConfirmed,
+    handleToolCallPendingConfirmation,
+    handleToolCallResult,
+    handleVideoGenerated,
+  ])
 
   const initChat = useCallback(async () => {
     if (!sessionId) {
@@ -696,7 +851,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
     sessionIdRef.current = sessionId
 
-    const resp = await fetch('/api/chat_session/' + sessionId)
+    const resp = await fetch(
+      `/api/chat_session/${sessionId}?client_id=${encodeURIComponent(clientId)}`
+    )
     const data = await resp.json()
     const msgs = data?.length ? data : []
 
@@ -732,11 +889,51 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     setCurrentVideoBrief,
     setInitCanvas,
     syncPendingToolConfirmations,
+    clientId,
   ])
 
   useEffect(() => {
     initChat()
   }, [sessionId, initChat])
+
+  useEffect(() => {
+    let mounted = true
+    setQueueItems([])
+
+    const syncQueue = async () => {
+      try {
+        const response = await listClientGenerationJobs({
+          canvasId,
+          status: 'queued,running',
+          limit: 20,
+        })
+        if (!mounted) {
+          return
+        }
+        setQueueItems(
+          (response.jobs || []).sort((a, b) => {
+            const timeDiff =
+              new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+            if (timeDiff !== 0) {
+              return timeDiff
+            }
+            return a.id.localeCompare(b.id)
+          })
+        )
+      } catch (error) {
+        console.warn('Failed to sync client media queue', {
+          canvasId,
+          error,
+        })
+      }
+    }
+
+    void syncQueue()
+
+    return () => {
+      mounted = false
+    }
+  }, [canvasId, clientId])
 
   useEffect(() => {
     if (!sessionId) {
@@ -977,6 +1174,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
         </ScrollArea>
 
         <div className='p-2 gap-2 sticky bottom-0'>
+          <QueuePreview jobs={queueItems} />
           <ChatTextarea
             sessionId={sessionId!}
             pending={!!pending}
@@ -989,7 +1187,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
             canvasId={canvasId}
             messages={messages}
             setMessages={setMessages}
-            setPending={setPending}
+            onQueueJobAccepted={upsertQueueJob}
             scrollToBottom={scrollToBottom}
           />
           <ChatCanvasStoryboardGenerator
@@ -997,7 +1195,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
             canvasId={canvasId}
             messages={messages}
             setMessages={setMessages}
-            setPending={setPending}
+            onQueueJobAccepted={upsertQueueJob}
             scrollToBottom={scrollToBottom}
           />
           <ChatCanvasMultiviewGenerator
@@ -1005,7 +1203,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
             canvasId={canvasId}
             messages={messages}
             setMessages={setMessages}
-            setPending={setPending}
+            onQueueJobAccepted={upsertQueueJob}
             scrollToBottom={scrollToBottom}
           />
         </div>

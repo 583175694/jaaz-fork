@@ -40,6 +40,7 @@ async def handle_chat(data: Dict[str, Any]) -> None:
     messages: List[Dict[str, Any]] = data.get('messages', [])
     session_id: str = data.get('session_id', '')
     canvas_id: str = data.get('canvas_id', '')
+    client_id: str = str(data.get('client_id', '') or '')
     text_model: ModelInfo = get_default_text_model()
     tool_list: List[ToolInfoJson] = sanitize_tool_list(data.get('tool_list', []))
 
@@ -56,6 +57,14 @@ async def handle_chat(data: Dict[str, Any]) -> None:
 
     # TODO: save and fetch system prompt from db or settings config
     system_prompt: Optional[str] = data.get('system_prompt')
+
+    if not client_id:
+        raise RuntimeError("client_id is required")
+
+    if canvas_id and client_id:
+        canvas = await db_service.get_canvas_data(canvas_id, client_id=client_id)
+        if not canvas:
+            raise RuntimeError("Canvas not found for current client.")
 
     try:
         messages = await maybe_compile_ad_image_messages(messages, text_model)
@@ -78,7 +87,14 @@ async def handle_chat(data: Dict[str, Any]) -> None:
         # create new session
         prompt = messages[0].get('content', '')
         # TODO: Better way to determin when to create new chat session.
-        await db_service.create_chat_session(session_id, text_model.get('model'), text_model.get('provider'), canvas_id, (prompt[:200] if isinstance(prompt, str) else ''))
+        await db_service.create_chat_session(
+            session_id,
+            text_model.get('model'),
+            text_model.get('provider'),
+            canvas_id,
+            (prompt[:200] if isinstance(prompt, str) else ''),
+            client_id=client_id,
+        )
         print(
             "💬 handle_chat session created",
             {

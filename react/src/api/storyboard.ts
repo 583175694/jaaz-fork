@@ -1,6 +1,7 @@
-import { Message } from '@/types/types'
+import { GenerationJob, Message } from '@/types/types'
 import { Model } from '@/types/types'
 import { ImageModelOption } from '@/lib/imageModels'
+import { getClientId } from '@/lib/client'
 
 export const previewDirectStoryboardPrompt = async (payload: {
   textModel?: Model
@@ -39,13 +40,14 @@ export const sendDirectStoryboardGenerate = async (payload: {
   imageToolId?: string
   imageModel?: ImageModelOption
   skipPromptConfirmation?: boolean
-}) => {
+}): Promise<{ status: string; job_id?: string; job?: GenerationJob }> => {
   const response = await fetch('/api/direct_storyboard', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
+      client_id: getClientId(),
       messages: payload.newMessages,
       session_id: payload.sessionId,
       canvas_id: payload.canvasId,
@@ -81,13 +83,14 @@ export const sendDirectMultiviewGenerate = async (payload: {
   previewOnly?: boolean
   replaceSource?: boolean
   imageToolId?: string
-}) => {
+}): Promise<{ status: string; job_id?: string; job?: GenerationJob }> => {
   const response = await fetch('/api/direct_multiview', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
+      client_id: getClientId(),
       messages: payload.newMessages,
       session_id: payload.sessionId,
       canvas_id: payload.canvasId,
@@ -122,13 +125,14 @@ export const sendDirectStoryboardRefine = async (payload: {
   mode?: 'append' | 'replace'
   imageToolId?: string
   imageModel?: ImageModelOption
-}) => {
+}): Promise<{ status: string; job_id?: string; job?: GenerationJob }> => {
   const response = await fetch('/api/storyboard/refine', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
+      client_id: getClientId(),
       messages: payload.newMessages,
       session_id: payload.sessionId,
       canvas_id: payload.canvasId,
@@ -159,6 +163,7 @@ export const markStoryboardPrimaryVariant = async (payload: {
     body: JSON.stringify({
       canvas_id: payload.canvasId,
       file_id: payload.fileId,
+      client_id: getClientId(),
     }),
   })
   if (!response.ok) {

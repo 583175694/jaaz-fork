@@ -43,8 +43,11 @@ def ensure_canvas_production_state(canvas_data: Dict[str, Any]) -> Dict[str, Any
     return production
 
 
-async def load_canvas_data(canvas_id: str) -> Dict[str, Any]:
-    canvas = await db_service.get_canvas_data(canvas_id)
+async def load_canvas_data(
+    canvas_id: str,
+    client_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    canvas = await db_service.get_canvas_data(canvas_id, client_id=client_id)
     if not canvas:
         return {"elements": [], "files": {}, "production": {}}
     data = canvas.get("data", {}) if isinstance(canvas, dict) else {}
@@ -56,9 +59,17 @@ async def load_canvas_data(canvas_id: str) -> Dict[str, Any]:
     return data
 
 
-async def save_canvas_data(canvas_id: str, canvas_data: Dict[str, Any]) -> None:
+async def save_canvas_data(
+    canvas_id: str,
+    canvas_data: Dict[str, Any],
+    client_id: Optional[str] = None,
+) -> None:
     ensure_canvas_production_state(canvas_data)
-    await db_service.save_canvas_data(canvas_id, json.dumps(canvas_data))
+    await db_service.save_canvas_data(
+        canvas_id,
+        json.dumps(canvas_data),
+        client_id=client_id,
+    )
 
 
 def build_continuity_asset(
@@ -322,8 +333,11 @@ async def upsert_video_brief(canvas_id: str, video_brief: Dict[str, Any]) -> Non
     await save_canvas_data(canvas_id, canvas_data)
 
 
-async def get_current_continuity_asset(canvas_id: str) -> Optional[Dict[str, Any]]:
-    canvas_data = await load_canvas_data(canvas_id)
+async def get_current_continuity_asset(
+    canvas_id: str,
+    client_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    canvas_data = await load_canvas_data(canvas_id, client_id=client_id)
     production = ensure_canvas_production_state(canvas_data)
     continuity_id = str(production.get("current_continuity_id", "") or "")
     if not continuity_id:
@@ -332,28 +346,42 @@ async def get_current_continuity_asset(canvas_id: str) -> Optional[Dict[str, Any
     return asset if isinstance(asset, dict) else None
 
 
-async def get_current_main_image_file_id(canvas_id: str) -> str:
-    canvas_data = await load_canvas_data(canvas_id)
+async def get_current_main_image_file_id(
+    canvas_id: str,
+    client_id: Optional[str] = None,
+) -> str:
+    canvas_data = await load_canvas_data(canvas_id, client_id=client_id)
     production = ensure_canvas_production_state(canvas_data)
     return str(production.get("current_main_image_file_id", "") or "")
 
 
-async def set_current_main_image_file_id(canvas_id: str, file_id: str) -> None:
-    canvas_data = await load_canvas_data(canvas_id)
+async def set_current_main_image_file_id(
+    canvas_id: str,
+    file_id: str,
+    client_id: Optional[str] = None,
+) -> None:
+    canvas_data = await load_canvas_data(canvas_id, client_id=client_id)
     production = ensure_canvas_production_state(canvas_data)
     production["current_main_image_file_id"] = str(file_id or "").strip()
-    await save_canvas_data(canvas_id, canvas_data)
+    await save_canvas_data(canvas_id, canvas_data, client_id=client_id)
 
 
-async def get_storyboard_plan(canvas_id: str, storyboard_id: str) -> Optional[Dict[str, Any]]:
-    canvas_data = await load_canvas_data(canvas_id)
+async def get_storyboard_plan(
+    canvas_id: str,
+    storyboard_id: str,
+    client_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    canvas_data = await load_canvas_data(canvas_id, client_id=client_id)
     production = ensure_canvas_production_state(canvas_data)
     plan = production.get("storyboard_plans", {}).get(storyboard_id)
     return plan if isinstance(plan, dict) else None
 
 
-async def get_current_storyboard_plan(canvas_id: str) -> Optional[Dict[str, Any]]:
-    canvas_data = await load_canvas_data(canvas_id)
+async def get_current_storyboard_plan(
+    canvas_id: str,
+    client_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    canvas_data = await load_canvas_data(canvas_id, client_id=client_id)
     production = ensure_canvas_production_state(canvas_data)
     storyboard_id = str(production.get("current_storyboard_id", "") or "")
     if not storyboard_id:
@@ -362,8 +390,11 @@ async def get_current_storyboard_plan(canvas_id: str) -> Optional[Dict[str, Any]
     return plan if isinstance(plan, dict) else None
 
 
-async def get_current_video_brief(canvas_id: str) -> Optional[Dict[str, Any]]:
-    canvas_data = await load_canvas_data(canvas_id)
+async def get_current_video_brief(
+    canvas_id: str,
+    client_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    canvas_data = await load_canvas_data(canvas_id, client_id=client_id)
     production = ensure_canvas_production_state(canvas_data)
     current_video_brief_id = str(production.get("current_video_brief_id", "") or "")
     video_briefs = production.get("video_briefs", {})

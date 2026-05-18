@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button'
+import { getClientId } from '@/lib/client'
 import { ChatSession } from '@/types/types'
 import { XIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -15,11 +16,14 @@ export default function ChatHistory({
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([])
   useEffect(() => {
     const fetchChatSessions = async () => {
-      const sessions = await fetch('/api/list_chat_sessions', {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
+      const sessions = await fetch(
+        `/api/list_chat_sessions?client_id=${encodeURIComponent(getClientId())}`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      )
       const data = await sessions.json()
       setChatSessions(data)
     }

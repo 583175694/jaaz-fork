@@ -41,10 +41,19 @@ async def list_tools() -> list[ToolInfoJson]:
 
 
 @router.get("/list_chat_sessions")
-async def list_chat_sessions():
-    return await db_service.list_sessions()
+async def list_chat_sessions(client_id: str = ""):
+    if not client_id:
+        return []
+    return await db_service.list_sessions(client_id=client_id or None)
 
 
 @router.get("/chat_session/{session_id}")
-async def get_chat_session(session_id: str):
+async def get_chat_session(session_id: str, client_id: str = ""):
+    if not client_id:
+        return []
+    session = await db_service.get_chat_session(session_id)
+    if not session:
+        return []
+    if str(session.get("client_id", "") or "") != client_id:
+        return []
     return await db_service.get_chat_history(session_id)

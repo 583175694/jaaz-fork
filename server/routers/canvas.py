@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 #from routers.agent import chat
 from services.chat_service import handle_chat
 from services.db_service import db_service
@@ -116,8 +116,10 @@ def _normalize_canvas_persistence_data(data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 @router.get("/list")
-async def list_canvases():
-    return await db_service.list_canvases()
+async def list_canvases(client_id: str = ""):
+    if not client_id:
+        return []
+    return await db_service.list_canvases(client_id=client_id or None)
 
 @router.post("/create")
 async def create_canvas(request: Request):
@@ -125,6 +127,7 @@ async def create_canvas(request: Request):
     id = data.get('canvas_id')
     name = data.get('name')
     session_id = data.get('session_id')
+    client_id = str(data.get('client_id', '') or '')
     messages = data.get("messages", []) or []
     print(
         "🖼️ /api/canvas/create",
@@ -136,7 +139,10 @@ async def create_canvas(request: Request):
         },
     )
 
-    await db_service.create_canvas(id, name)
+    if not client_id:
+        raise HTTPException(status_code=400, detail="client_id is required")
+
+    await db_service.create_canvas(id, name, client_id=client_id)
     print(
         "🖼️ canvas row created",
         {
@@ -172,8 +178,10 @@ async def create_canvas(request: Request):
     return {"id": id }
 
 @router.get("/{id}")
-async def get_canvas(id: str):
-    canvas = await db_service.get_canvas_data(id)
+async def get_canvas(id: str, client_id: str = ""):
+    if not client_id:
+        return None
+    canvas = await db_service.get_canvas_data(id, client_id=client_id or None)
     if not canvas:
         return canvas
 
@@ -185,24 +193,45 @@ async def get_canvas(id: str):
 @router.post("/{id}/save")
 async def save_canvas(id: str, request: Request):
     payload = await request.json()
+    client_id = str(payload.get("client_id", "") or "")
+    if not client_id:
+        raise HTTPException(status_code=400, detail="client_id is required")
     incoming_data = _normalize_canvas_persistence_data(payload["data"])
-    existing_canvas = await db_service.get_canvas_data(id)
+    existing_canvas = await db_service.get_canvas_data(id, client_id=client_id or None)
+    if not existing_canvas:
+        raise HTTPException(status_code=404, detail="Canvas not found")
     existing_data = existing_canvas.get("data", {}) if existing_canvas else {}
     merged_data = _normalize_canvas_persistence_data(
         _merge_persisted_video_data(incoming_data, existing_data)
     )
     data_str = json.dumps(merged_data)
-    await db_service.save_canvas_data(id, data_str, payload['thumbnail'])
+    await db_service.save_canvas_data(
+        id,
+        data_str,
+        payload['thumbnail'],
+        client_id=client_id,
+    )
     return {"id": id }
 
 @router.post("/{id}/rename")
 async def rename_canvas(id: str, request: Request):
     data = await request.json()
+    client_id = str(data.get("client_id", "") or "")
+    if not client_id:
+        raise HTTPException(status_code=400, detail="client_id is required")
     name = data.get('name')
+    existing_canvas = await db_service.get_canvas_data(id, client_id=client_id or None)
+    if not existing_canvas:
+        raise HTTPException(status_code=404, detail="Canvas not found")
     await db_service.rename_canvas(id, name)
     return {"id": id }
 
 @router.delete("/{id}/delete")
-async def delete_canvas(id: str):
+async def delete_canvas(id: str, client_id: str = ""):
+    if not client_id:
+        raise HTTPException(status_code=400, detail="client_id is required")
+    existing_canvas = await db_service.get_canvas_data(id, client_id=client_id or None)
+    if not existing_canvas:
+        raise HTTPException(status_code=404, detail="Canvas not found")
     await db_service.delete_canvas(id)
     return {"id": id }

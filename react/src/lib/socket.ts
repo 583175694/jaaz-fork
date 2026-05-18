@@ -1,6 +1,7 @@
 import * as ISocket from '@/types/socket'
 import { io, Socket } from 'socket.io-client'
 import { eventBus } from './event'
+import { getClientId } from './client'
 
 export interface SocketConfig {
   serverUrl?: string
@@ -30,6 +31,9 @@ export class SocketIOManager {
       }
 
       this.socket = io(url, {
+        auth: {
+          client_id: getClientId(),
+        },
         transports: ['websocket'],
         upgrade: false,
         timeout: 30000,

@@ -54,10 +54,13 @@ export type GenerationJobStatus =
 export interface GenerationJob {
   id: string
   type: string
+  client_id: string
   session_id: string
   canvas_id: string
   status: GenerationJobStatus
   provider: string
+  deduplicated?: boolean
+  summary_text?: string | null
   provider_task_id?: string | null
   request_payload?: unknown
   result_payload?: unknown
@@ -242,6 +245,7 @@ export type CanvasProductionState = {
 
 export type Session = {
   created_at: string
+  client_id?: string
   id: string
   model: string
   provider: string

@@ -58,7 +58,9 @@ export interface SessionVideoGeneratedEvent extends SessionBaseEvent {
 export interface SessionJobBaseEvent extends SessionBaseEvent {
   job_id: string
   job_type: string
+  client_id: string
   status: string
+  summary_text?: string
   progress?: number
   error_message?: string
   canvas_id: string

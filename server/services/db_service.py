@@ -47,34 +47,50 @@ class DatabaseService:
                 # Need to migrate
                 self._migration_manager.migrate(conn, current_version[0], CURRENT_VERSION)
 
-    async def create_canvas(self, id: str, name: str):
+    async def create_canvas(self, id: str, name: str, client_id: Optional[str] = None):
         """Create a new canvas"""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
-                INSERT OR IGNORE INTO canvases (id, name)
-                VALUES (?, ?)
-            """, (id, name))
+                INSERT OR IGNORE INTO canvases (id, name, client_id)
+                VALUES (?, ?, ?)
+            """, (id, name, client_id))
             await db.commit()
 
-    async def list_canvases(self) -> List[Dict[str, Any]]:
+    async def list_canvases(self, client_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get all canvases"""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = sqlite3.Row
-            cursor = await db.execute("""
-                SELECT id, name, description, thumbnail, created_at, updated_at
-                FROM canvases
-                ORDER BY updated_at DESC
-            """)
+            if client_id is not None:
+                cursor = await db.execute("""
+                    SELECT id, name, description, thumbnail, created_at, updated_at, client_id
+                    FROM canvases
+                    WHERE client_id = ?
+                    ORDER BY updated_at DESC
+                """, (client_id,))
+            else:
+                cursor = await db.execute("""
+                    SELECT id, name, description, thumbnail, created_at, updated_at, client_id
+                    FROM canvases
+                    ORDER BY updated_at DESC
+                """)
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
-    async def create_chat_session(self, id: str, model: str, provider: str, canvas_id: str, title: Optional[str] = None):
+    async def create_chat_session(
+        self,
+        id: str,
+        model: str,
+        provider: str,
+        canvas_id: str,
+        title: Optional[str] = None,
+        client_id: Optional[str] = None,
+    ):
         """Save a new chat session"""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
-                INSERT OR IGNORE INTO chat_sessions (id, model, provider, canvas_id, title)
-                VALUES (?, ?, ?, ?, ?)
-            """, (id, model, provider, canvas_id, title))
+                INSERT OR IGNORE INTO chat_sessions (id, model, provider, canvas_id, title, client_id)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (id, model, provider, canvas_id, title, client_id))
             await db.commit()
 
     async def create_message(self, session_id: str, role: str, message: str):
@@ -267,23 +283,38 @@ class DatabaseService:
 
         return MARKDOWN_IMAGE_URL_PATTERN.sub(replace, text)
 
-    async def list_sessions(self, canvas_id: str) -> List[Dict[str, Any]]:
+    async def list_sessions(
+        self,
+        canvas_id: str = "",
+        client_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """List all chat sessions"""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = sqlite3.Row
+            params: List[Any] = []
+            conditions: List[str] = []
+            if canvas_id:
+                conditions.append("canvas_id = ?")
+                params.append(canvas_id)
+            if client_id is not None:
+                conditions.append("client_id = ?")
+                params.append(client_id)
+
+            where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
             if canvas_id:
                 cursor = await db.execute("""
-                    SELECT id, title, model, provider, created_at, updated_at
+                    SELECT id, title, model, provider, created_at, updated_at, client_id
                     FROM chat_sessions
-                    WHERE canvas_id = ?
+                    """ + where_clause + """
                     ORDER BY updated_at DESC
-                """, (canvas_id,))
+                """, tuple(params))
             else:
                 cursor = await db.execute("""
-                    SELECT id, title, model, provider, created_at, updated_at
+                    SELECT id, title, model, provider, created_at, updated_at, client_id
                     FROM chat_sessions
+                    """ + where_clause + """
                     ORDER BY updated_at DESC
-                """)
+                """, tuple(params))
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
@@ -292,14 +323,20 @@ class DatabaseService:
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = sqlite3.Row
             cursor = await db.execute("""
-                SELECT id, title, model, provider, canvas_id, created_at, updated_at
+                SELECT id, title, model, provider, canvas_id, client_id, created_at, updated_at
                 FROM chat_sessions
                 WHERE id = ?
             """, (session_id,))
             row = await cursor.fetchone()
             return dict(row) if row else None
 
-    async def save_canvas_data(self, id: str, data: str, thumbnail: str = None):
+    async def save_canvas_data(
+        self,
+        id: str,
+        data: str,
+        thumbnail: str = None,
+        client_id: Optional[str] = None,
+    ):
         """Save canvas data"""
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute("""
@@ -311,31 +348,44 @@ class DatabaseService:
             if cursor.rowcount == 0:
                 print("⚠️ save_canvas_data missing canvas row, creating fallback canvas record", {
                     "canvas_id": id,
+                    "client_id": client_id,
                 })
                 await db.execute("""
-                    INSERT INTO canvases (id, name, data, thumbnail)
-                    VALUES (?, ?, ?, ?)
-                """, (id, "未命名", data, thumbnail))
+                    INSERT INTO canvases (id, name, data, thumbnail, client_id)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (id, "未命名", data, thumbnail, client_id))
             await db.commit()
 
-    async def get_canvas_data(self, id: str) -> Optional[Dict[str, Any]]:
+    async def get_canvas_data(
+        self,
+        id: str,
+        client_id: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
         """Get canvas data"""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = sqlite3.Row
-            cursor = await db.execute("""
-                SELECT data, name
-                FROM canvases
-                WHERE id = ?
-            """, (id,))
+            if client_id is not None:
+                cursor = await db.execute("""
+                    SELECT data, name, client_id
+                    FROM canvases
+                    WHERE id = ? AND client_id = ?
+                """, (id, client_id))
+            else:
+                cursor = await db.execute("""
+                    SELECT data, name, client_id
+                    FROM canvases
+                    WHERE id = ?
+                """, (id,))
             row = await cursor.fetchone()
 
-            sessions = await self.list_sessions(id)
+            sessions = await self.list_sessions(id, client_id=client_id)
             
             if row:
                 return {
                     'data': json.loads(row['data']) if row['data'] else {},
                     'name': row['name'],
-                    'sessions': sessions
+                    'sessions': sessions,
+                    'client_id': row['client_id'],
                 }
             return None
 
@@ -402,6 +452,8 @@ class DatabaseService:
         status: str,
         provider: str,
         request_payload: str,
+        client_id: Optional[str] = None,
+        summary_text: Optional[str] = None,
         provider_task_id: Optional[str] = None,
         result_payload: Optional[str] = None,
         error_message: Optional[str] = None,
@@ -413,17 +465,18 @@ class DatabaseService:
             await db.execute(
                 """
                 INSERT INTO generation_jobs (
-                    id, type, session_id, canvas_id, status, provider,
+                    id, type, session_id, canvas_id, client_id, status, provider,
                     provider_task_id, request_payload, result_payload,
-                    error_message, progress, started_at, finished_at
+                    error_message, progress, summary_text, started_at, finished_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     id,
                     type,
                     session_id,
                     canvas_id,
+                    client_id,
                     status,
                     provider,
                     provider_task_id,
@@ -431,6 +484,7 @@ class DatabaseService:
                     result_payload,
                     error_message,
                     progress,
+                    summary_text,
                     started_at,
                     finished_at,
                 ),
@@ -442,9 +496,9 @@ class DatabaseService:
             db.row_factory = sqlite3.Row
             cursor = await db.execute(
                 """
-                SELECT id, type, session_id, canvas_id, status, provider,
+                SELECT id, type, session_id, canvas_id, client_id, status, provider,
                        provider_task_id, request_payload, result_payload,
-                       error_message, progress, created_at, updated_at,
+                       error_message, progress, summary_text, created_at, updated_at,
                        started_at, finished_at
                 FROM generation_jobs
                 WHERE id = ?
@@ -471,6 +525,7 @@ class DatabaseService:
             "started_at",
             "finished_at",
             "request_payload",
+            "summary_text",
         }
         updates: List[str] = []
         params: List[Any] = []
@@ -502,14 +557,16 @@ class DatabaseService:
         *,
         canvas_id: Optional[str] = None,
         session_id: Optional[str] = None,
+        client_id: Optional[str] = None,
         type: Optional[str] = None,
         statuses: Optional[List[str]] = None,
         limit: int = 20,
+        ascending: bool = False,
     ) -> List[Dict[str, Any]]:
         query = """
-            SELECT id, type, session_id, canvas_id, status, provider,
+            SELECT id, type, session_id, canvas_id, client_id, status, provider,
                    provider_task_id, request_payload, result_payload,
-                   error_message, progress, created_at, updated_at,
+                   error_message, progress, summary_text, created_at, updated_at,
                    started_at, finished_at
             FROM generation_jobs
         """
@@ -522,6 +579,9 @@ class DatabaseService:
         if session_id:
             conditions.append("session_id = ?")
             params.append(session_id)
+        if client_id is not None:
+            conditions.append("client_id = ?")
+            params.append(client_id)
         if type:
             conditions.append("type = ?")
             params.append(type)
@@ -533,7 +593,10 @@ class DatabaseService:
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
 
-        query += " ORDER BY created_at DESC, id DESC LIMIT ?"
+        if ascending:
+            query += " ORDER BY created_at ASC, id ASC LIMIT ?"
+        else:
+            query += " ORDER BY created_at DESC, id DESC LIMIT ?"
         params.append(limit)
 
         async with aiosqlite.connect(self.db_path) as db:
@@ -547,39 +610,55 @@ class DatabaseService:
         *,
         session_id: str,
         canvas_id: str,
+        client_id: Optional[str],
         type: str,
         request_payload: str,
     ) -> Optional[Dict[str, Any]]:
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = sqlite3.Row
+            if client_id is None:
+                return None
             cursor = await db.execute(
                 """
-                SELECT id, type, session_id, canvas_id, status, provider,
+                SELECT id, type, session_id, canvas_id, client_id, status, provider,
                        provider_task_id, request_payload, result_payload,
-                       error_message, progress, created_at, updated_at,
+                       error_message, progress, summary_text, created_at, updated_at,
                        started_at, finished_at
                 FROM generation_jobs
-                WHERE session_id = ?
-                  AND canvas_id = ?
+                WHERE client_id = ?
                   AND type = ?
-                  AND request_payload = ?
                   AND status IN ('queued', 'running')
                 ORDER BY created_at DESC, id DESC
-                LIMIT 1
                 """,
-                (session_id, canvas_id, type, request_payload),
+                (client_id, type),
             )
-            row = await cursor.fetchone()
-            return dict(row) if row else None
+            rows = await cursor.fetchall()
+            for row in rows:
+                row_dict = dict(row)
+                stored_payload = row_dict.get("request_payload")
+                if not isinstance(stored_payload, str) or not stored_payload.strip():
+                    continue
+                try:
+                    payload_dict = json.loads(stored_payload)
+                except Exception:
+                    continue
+                normalized_payload = str(
+                    payload_dict.get("_normalized_payload_key", "")
+                    if isinstance(payload_dict, dict)
+                    else ""
+                )
+                if normalized_payload == request_payload:
+                    return row_dict
+            return None
 
     async def list_recoverable_generation_jobs(self) -> List[Dict[str, Any]]:
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = sqlite3.Row
             cursor = await db.execute(
                 """
-                SELECT id, type, session_id, canvas_id, status, provider,
+                SELECT id, type, session_id, canvas_id, client_id, status, provider,
                        provider_task_id, request_payload, result_payload,
-                       error_message, progress, created_at, updated_at,
+                       error_message, progress, summary_text, created_at, updated_at,
                        started_at, finished_at
                 FROM generation_jobs
                 WHERE status IN ('queued', 'running')
@@ -588,6 +667,26 @@ class DatabaseService:
             )
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
+
+    async def get_next_generation_job_for_client(self, client_id: str) -> Optional[Dict[str, Any]]:
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = sqlite3.Row
+            cursor = await db.execute(
+                """
+                SELECT id, type, session_id, canvas_id, client_id, status, provider,
+                       provider_task_id, request_payload, result_payload,
+                       error_message, progress, summary_text, created_at, updated_at,
+                       started_at, finished_at
+                FROM generation_jobs
+                WHERE client_id = ?
+                  AND status = 'queued'
+                ORDER BY created_at ASC, id ASC
+                LIMIT 1
+                """,
+                (client_id,),
+            )
+            row = await cursor.fetchone()
+            return dict(row) if row else None
 
 # Create a singleton instance
 db_service = DatabaseService()

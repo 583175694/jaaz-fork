@@ -9,7 +9,7 @@ import {
 } from '@/components/chat/canvasGenerationUtils'
 import { useConfigs } from '@/contexts/configs'
 import { eventBus, TCanvasGenerateMultiviewEvent } from '@/lib/event'
-import { Message, PendingType } from '@/types/types'
+import { GenerationJob, Message } from '@/types/types'
 import { useCallback, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 
@@ -18,7 +18,7 @@ type ChatCanvasMultiviewGeneratorProps = {
   canvasId: string
   messages: Message[]
   setMessages: (messages: Message[]) => void
-  setPending: (pending: PendingType) => void
+  onQueueJobAccepted: (job: GenerationJob) => void
   scrollToBottom: () => void
 }
 
@@ -29,7 +29,7 @@ const ChatCanvasMultiviewGenerator: React.FC<
   canvasId,
   messages,
   setMessages,
-  setPending,
+  onQueueJobAccepted,
   scrollToBottom,
 }) => {
   const inFlightRef = useRef(false)
@@ -38,12 +38,10 @@ const ChatCanvasMultiviewGenerator: React.FC<
   const handleGenerateMultiview = useCallback(
     async (data: TCanvasGenerateMultiviewEvent) => {
       if (inFlightRef.current) {
-        toast.info('多视角候选正在生成中，请等待当前任务完成')
         return
       }
 
       inFlightRef.current = true
-      setPending('text')
 
       try {
         const imageToolId = getPreferredReferenceImageToolId(selectedTools)
@@ -88,7 +86,7 @@ const ChatCanvasMultiviewGenerator: React.FC<
         scrollToBottom()
 
         if (data.mode === 'refinement') {
-          await sendDirectStoryboardRefine({
+          const response = await sendDirectStoryboardRefine({
             sessionId,
             canvasId,
             newMessages,
@@ -100,8 +98,17 @@ const ChatCanvasMultiviewGenerator: React.FC<
             imageToolId,
             imageModel: data.imageModel,
           })
+          if (response.job?.deduplicated) {
+            setMessages(messages)
+            toast.info('相同镜头编辑任务已在队列中', {
+              description: '不会重复创建任务，已复用当前排队项。',
+            })
+          }
+          if (response?.job) {
+            onQueueJobAccepted(response.job)
+          }
         } else {
-          await sendDirectMultiviewGenerate({
+          const response = await sendDirectMultiviewGenerate({
             sessionId,
             canvasId,
             newMessages,
@@ -118,6 +125,15 @@ const ChatCanvasMultiviewGenerator: React.FC<
             replaceSource: data.replaceSource,
             imageToolId,
           })
+          if (response.job?.deduplicated) {
+            setMessages(messages)
+            toast.info('相同多视角任务已在队列中', {
+              description: '不会重复创建任务，已复用当前排队项。',
+            })
+          }
+          if (response?.job) {
+            onQueueJobAccepted(response.job)
+          }
         }
 
         // Multiview/refine requests rely on realtime confirmation pushes.
@@ -143,7 +159,6 @@ const ChatCanvasMultiviewGenerator: React.FC<
         toast.error('发起多视角候选失败', {
           description: String(error),
         })
-        setPending(false)
       } finally {
         inFlightRef.current = false
       }
@@ -155,7 +170,7 @@ const ChatCanvasMultiviewGenerator: React.FC<
       selectedTools,
       sessionId,
       setMessages,
-      setPending,
+      onQueueJobAccepted,
     ]
   )
 

@@ -1,4 +1,5 @@
 import { GenerationJob, Message, Model } from '@/types/types'
+import { getClientId } from '@/lib/client'
 
 export const previewDirectVideoPrompt = async (payload: {
   canvasId: string
@@ -19,6 +20,7 @@ export const previewDirectVideoPrompt = async (payload: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
+      client_id: getClientId(),
       canvas_id: payload.canvasId,
       text_model: payload.textModel,
       file_ids: payload.fileIds,
@@ -62,6 +64,7 @@ export const sendDirectVideoGenerate = async (payload: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
+      client_id: getClientId(),
       messages: payload.newMessages,
       session_id: payload.sessionId,
       canvas_id: payload.canvasId,
@@ -88,7 +91,9 @@ export const sendDirectVideoGenerate = async (payload: {
 export const getGenerationJob = async (
   jobId: string
 ): Promise<{ job: GenerationJob | null }> => {
-  const response = await fetch(`/api/jobs/${jobId}`)
+  const response = await fetch(
+    `/api/jobs/${jobId}?client_id=${encodeURIComponent(getClientId())}`
+  )
   if (!response.ok) {
     throw new Error(`Get generation job failed: ${response.status}`)
   }
@@ -104,6 +109,7 @@ export const listCanvasGenerationJobs = async (
   }
 ): Promise<{ jobs: GenerationJob[] }> => {
   const search = new URLSearchParams()
+  search.set('client_id', getClientId())
   if (params?.type) {
     search.set('type', params.type)
   }
@@ -119,6 +125,28 @@ export const listCanvasGenerationJobs = async (
   )
   if (!response.ok) {
     throw new Error(`List canvas generation jobs failed: ${response.status}`)
+  }
+  return await response.json()
+}
+
+export const listClientGenerationJobs = async (params: {
+  canvasId: string
+  status?: string
+  limit?: number
+}): Promise<{ jobs: GenerationJob[] }> => {
+  const search = new URLSearchParams()
+  search.set('scope', 'client')
+  search.set('client_id', getClientId())
+  search.set('canvas_id', params.canvasId)
+  if (params.status) {
+    search.set('status', params.status)
+  }
+  if (typeof params.limit === 'number') {
+    search.set('limit', String(params.limit))
+  }
+  const response = await fetch(`/api/jobs?${search.toString()}`)
+  if (!response.ok) {
+    throw new Error(`List client generation jobs failed: ${response.status}`)
   }
   return await response.json()
 }

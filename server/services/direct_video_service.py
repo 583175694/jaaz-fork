@@ -8,7 +8,7 @@ from services.db_service import db_service
 from services.generation_job_service import (
     JOB_PROVIDER_APIPOD_VIDEO,
     JOB_TYPE_DIRECT_VIDEO,
-    create_job,
+    create_media_job,
     mark_job_failed,
     mark_job_succeeded,
     register_job_runner,
@@ -79,6 +79,10 @@ def _normalize_video_model(data: Dict[str, Any]) -> str:
     return get_apipod_video_model_name()
 
 
+def _normalize_client_id(data: Dict[str, Any]) -> str:
+    return str(data.get("client_id", "") or "").strip()
+
+
 def _resolve_ordered_reference_file_ids(
     file_ids: List[str],
     selection_mode: str,
@@ -106,6 +110,34 @@ def _resolve_ordered_reference_file_ids(
             ordered.append(tail_candidate)
 
     return ordered[:APIPOD_VIDEO_REFERENCE_IMAGES_MAX]
+
+
+async def _ensure_media_session(
+    *,
+    client_id: str,
+    session_id: str,
+    canvas_id: str,
+    title: str,
+    model: str,
+    provider: str,
+) -> None:
+    existing_sessions = await db_service.list_sessions(canvas_id, client_id=client_id)
+    if any(session.get("id") == session_id for session in existing_sessions):
+        return
+    await db_service.create_chat_session(
+        session_id,
+        model,
+        provider,
+        canvas_id,
+        title,
+        client_id=client_id,
+    )
+
+
+async def _ensure_owned_canvas(client_id: str, canvas_id: str) -> None:
+    canvas = await db_service.get_canvas_data(canvas_id, client_id=client_id)
+    if not canvas:
+        raise RuntimeError("Canvas not found for current client.")
 
 
 async def _compile_direct_video_prompt(
@@ -178,6 +210,124 @@ async def _compile_direct_video_prompt(
         "start_frame_file_id": start_frame_file_id,
         "end_frame_file_id": end_frame_file_id,
     }
+
+
+async def _confirm_direct_video_request(
+    *,
+    session_id: str,
+    canvas_id: str,
+    prompt: str,
+    messages: List[Dict[str, Any]],
+    file_ids: List[str],
+    selection_mode: str,
+    start_frame_file_id: str,
+    end_frame_file_id: str,
+    duration: int,
+    aspect_ratio: str,
+    resolution: str,
+    text_model: Optional[ModelInfo],
+    video_model: str,
+    skip_prompt_compilation: bool,
+) -> str:
+    if skip_prompt_compilation:
+        selection = await _resolve_storyboard_video_selection(
+            canvas_id=canvas_id,
+            file_ids=file_ids,
+            start_frame_file_id=start_frame_file_id,
+            end_frame_file_id=end_frame_file_id,
+        )
+        file_ids = selection["file_ids"]
+        start_frame_file_id = selection["start_frame_file_id"]
+        end_frame_file_id = selection["end_frame_file_id"]
+        reference_file_ids = _resolve_ordered_reference_file_ids(
+            file_ids=file_ids,
+            selection_mode=selection_mode,
+            start_frame_file_id=start_frame_file_id,
+            end_frame_file_id=end_frame_file_id,
+        )
+        storyboard_id = str(selection.get("storyboard_id", "") or "")
+        continuity_ids = selection.get("continuity_ids", set())
+        continuity_versions = selection.get("continuity_versions", set())
+        if len(continuity_ids) > 1 or len(continuity_versions) > 1:
+            raise RuntimeError(
+                "当前选中的分镜主版本存在多个 continuity 版本，暂不能直接生成视频。请先统一分镜版本。"
+            )
+        if len(file_ids) > 1 and not apipod_video_supports_multi_reference_images(video_model):
+            raise RuntimeError(
+                format_apipod_multi_reference_images_not_supported_error(video_model)
+            )
+        compiled_video_prompt = str(prompt or "").strip()
+        if not compiled_video_prompt:
+            raise RuntimeError("最终视频提示词不能为空")
+        compiled = {
+            "brief": {
+                "objective": "输出一条连续的短视频",
+                "tone": "premium commercial",
+                "platform": "canvas selected storyboard to video",
+                "product_priority": "",
+            },
+            "video_prompt": compiled_video_prompt,
+            "selected_frame_generation_meta": {},
+            "selected_frame_storyboard_meta": {},
+        }
+    else:
+        compile_result = await _compile_direct_video_prompt(
+            session_id=session_id,
+            canvas_id=canvas_id,
+            prompt=prompt,
+            messages=messages,
+            file_ids=file_ids,
+            selection_mode=selection_mode,
+            start_frame_file_id=start_frame_file_id,
+            end_frame_file_id=end_frame_file_id,
+            duration=duration,
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
+            text_model=text_model,
+            video_model=video_model,
+        )
+        selection = compile_result["selection"]
+        reference_file_ids = compile_result["reference_file_ids"]
+        storyboard_id = compile_result["storyboard_id"]
+        compiled = compile_result["compiled"]
+
+    continuity_asset = await get_current_continuity_asset(canvas_id)
+    selected_storyboard_variants: List[Dict[str, Any]] = []
+    if storyboard_id:
+        for item in collect_primary_storyboard_variants(selection.get("canvas_data", {}), storyboard_id):
+            meta = item.get("storyboard_meta", {})
+            if not isinstance(meta, dict):
+                continue
+            selected_storyboard_variants.append(
+                {
+                    "shot_id": str(meta.get("shot_id", "") or ""),
+                    "narrative_role": str(meta.get("narrative_role", "") or ""),
+                    "shot_family_id": str(meta.get("shot_family_id", "") or ""),
+                    "variant_id": str(meta.get("variant_id", "") or ""),
+                }
+            )
+    video_brief = build_video_brief_asset(
+        continuity_asset=continuity_asset,
+        compiled=compiled,
+        storyboard_id=storyboard_id,
+        duration=duration,
+        aspect_ratio=aspect_ratio,
+        resolution=resolution,
+    )
+    confirmation_payload = _build_video_prompt_confirmation_payload(
+        compiled=compiled,
+        selected_image_count=len(reference_file_ids),
+        duration=duration,
+        aspect_ratio=aspect_ratio,
+        resolution=resolution,
+        video_brief=video_brief,
+        selected_storyboard_variants=selected_storyboard_variants,
+    )
+    return await request_prompt_bundle_confirmation(
+        session_id=session_id,
+        tool_name="generate_video_from_storyboard",
+        payload=confirmation_payload,
+    )
 
 
 async def _resolve_storyboard_video_selection(
@@ -290,6 +440,7 @@ def _build_video_prompt_confirmation_payload(
 
 async def handle_direct_video(data: Dict[str, Any]) -> Dict[str, Any]:
     messages: List[Dict[str, Any]] = data.get("messages", [])
+    client_id: str = _normalize_client_id(data)
     session_id: str = data.get("session_id", "")
     canvas_id: str = data.get("canvas_id", "")
     text_model = _normalize_text_model(data)
@@ -326,6 +477,10 @@ async def handle_direct_video(data: Dict[str, Any]) -> Dict[str, Any]:
             "skip_prompt_compilation": skip_prompt_compilation,
         },
     )
+    if not client_id or not session_id or not canvas_id:
+        raise RuntimeError("Direct video generation requires client_id, session_id, and canvas_id.")
+    await _ensure_owned_canvas(client_id, canvas_id)
+
     if (
         not str(prompt or "").strip()
         or "这是一条画布里的“选中分镜生成视频”操作请求" in prompt
@@ -340,18 +495,39 @@ async def handle_direct_video(data: Dict[str, Any]) -> Dict[str, Any]:
             },
         )
 
-    existing_sessions = await db_service.list_sessions(canvas_id)
-    if not any(session.get("id") == session_id for session in existing_sessions):
-        await db_service.create_chat_session(
-            session_id,
-            text_model.get("model") if text_model else video_model,
-            text_model.get("provider") if text_model else "apipodvideo",
-            canvas_id,
-            (prompt[:200] if prompt else "Generate Video"),
-        )
+    await _ensure_media_session(
+        client_id=client_id,
+        session_id=session_id,
+        canvas_id=canvas_id,
+        title=(prompt[:200] if prompt else "Generate Video"),
+        model=text_model.get("model") if text_model else video_model,
+        provider=text_model.get("provider") if text_model else "apipodvideo",
+    )
 
-    job = await create_job(
+    if not skip_prompt_confirmation:
+        confirmation_status = await _confirm_direct_video_request(
+            session_id=session_id,
+            canvas_id=canvas_id,
+            prompt=prompt,
+            messages=messages,
+            file_ids=file_ids,
+            selection_mode=selection_mode,
+            start_frame_file_id=start_frame_file_id,
+            end_frame_file_id=end_frame_file_id,
+            duration=duration,
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
+            text_model=text_model,
+            video_model=video_model,
+            skip_prompt_compilation=skip_prompt_compilation,
+        )
+        if confirmation_status != "confirmed":
+            return {"status": confirmation_status}
+        skip_prompt_confirmation = True
+
+    job = await create_media_job(
         job_type=JOB_TYPE_DIRECT_VIDEO,
+        client_id=client_id,
         session_id=session_id,
         canvas_id=canvas_id,
         provider=JOB_PROVIDER_APIPOD_VIDEO,
@@ -371,6 +547,7 @@ async def handle_direct_video(data: Dict[str, Any]) -> Dict[str, Any]:
             "resolution": resolution,
             "skip_prompt_confirmation": skip_prompt_confirmation,
             "skip_prompt_compilation": skip_prompt_compilation,
+            "client_id": client_id,
         },
     )
 
@@ -395,8 +572,12 @@ async def handle_direct_video(data: Dict[str, Any]) -> Dict[str, Any]:
 async def preview_direct_video_prompt(data: Dict[str, Any]) -> Dict[str, Any]:
     session_id: str = str(data.get("session_id", "") or "")
     canvas_id: str = str(data.get("canvas_id", "") or "")
+    client_id: str = _normalize_client_id(data)
     if not canvas_id:
         raise RuntimeError("canvas_id is required")
+    if not client_id:
+        raise RuntimeError("client_id is required")
+    await _ensure_owned_canvas(client_id, canvas_id)
 
     text_model = _normalize_text_model(data)
     video_model = _normalize_video_model(data)
